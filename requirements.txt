@@ -1,0 +1,30 @@
+# ── NOTĂ SETUP ────────────────────────────────────────────────────────────
+# Folosește setup.sh în loc de `pip install -r requirements.txt` direct.
+# Motivul: faiss-gpu se instalează prin micromamba (conda-forge), nu pip.
+# Python corect: /opt/micromamba/bin/python  (nu /usr/bin/python3 = 3.8!)
+#
+# PyTorch cu124 e pre-instalat în mediul micromamba:
+#   torch==2.6.0+cu124  — funcționează cu driver CUDA 13.0 (backward compat)
+
+# ── Core pipeline ─────────────────────────────────────────────────────────
+httpx>=0.27.0              # HTTP client pentru API calls (generator, evaluator)
+tqdm>=4.66.0               # progress bars
+numpy>=1.26.0              # operații vectoriale FAISS
+
+# ── RAG / Embedder ─────────────────────────────────────────────────────────
+# faiss-gpu: instalat prin setup.sh (micromamba conda-forge)
+# faiss-cpu>=1.8.0         # fallback dacă nu ai GPU
+sentence-transformers>=3.0.0  # wrapper Qwen3-Embedding / NV-Embed
+
+# ── Experiments (scaling laws) ─────────────────────────────────────────────
+scikit-learn>=1.4.0        # TF-IDF + Logistic Regression
+matplotlib>=3.8.0          # plot F1 vs N
+
+# ── GRPO Training ──────────────────────────────────────────────────────────
+torch>=2.6.0               # pre-instalat cu124; nu reinstala fără --index-url
+transformers>=4.43.0       # AutoModelForCausalLM, AutoTokenizer
+trl>=0.9.6                 # GRPOTrainer
+peft>=0.11.0               # LoRA / QLoRA
+bitsandbytes>=0.43.0       # 4-bit NF4 quantization (QLoRA pe 4090)
+accelerate>=0.30.0         # backend distribuit pentru Trainer
+datasets>=2.20.0           # HuggingFace Dataset pentru GRPO
