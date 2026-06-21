@@ -241,7 +241,7 @@ If you use this code or dataset in your research, please cite:
 ```
 Gherghe, G.-A., Dascălu, M. (2026). Multilingual Phishing Email Generation and
 Detection: A Synthetic Data Pipeline with GRPO Fine-Tuning.
-In Proceedings of SYNASC 2026.
+Master's Thesis, Politehnica University of Bucharest.
 ```
 
 ---
@@ -249,3 +249,4 @@ In Proceedings of SYNASC 2026.
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
+
