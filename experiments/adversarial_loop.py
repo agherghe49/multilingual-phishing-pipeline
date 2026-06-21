@@ -1,24 +1,24 @@
 """
 experiments/adversarial_loop.py
 
-Joc adversarial iterativ: 3 runde de adaptare classifier vs. phishing GRPO.
+Iterative adversarial game: 3 rounds of classifier adaptation vs. GRPO phishing.
 
-Protocolul:
-  Runda 0: C₀ antrenat pe phishing STANDARD (train.jsonl)
-            → testat pe 200 emailuri GRPO (batch A, seed=42)  → FNR₀
+Protocol:
+  Round 0: C₀ trained on STANDARD phishing (train.jsonl)
+            → tested on 200 GRPO emails (batch A, seed=42)  → FNR₀
 
-  Runda 1: C₁ antrenat pe phishing STANDARD + batch A (emailuri GRPO runda 0)
-            → testat pe 200 emailuri GRPO FRESH (batch B, seed=123)  → FNR₁
+  Round 1: C₁ trained on STANDARD phishing + batch A (GRPO emails from round 0)
+            → tested on 200 FRESH GRPO emails (batch B, seed=123)  → FNR₁
 
-  Runda 2: C₂ antrenat pe phishing STANDARD + batch A + batch B
-            → testat pe 200 emailuri GRPO FRESH (batch C, seed=456)  → FNR₂
+  Round 2: C₂ trained on STANDARD phishing + batch A + batch B
+            → tested on 200 FRESH GRPO emails (batch C, seed=456)  → FNR₂
 
-Întrebarea: FNR scade pe măsură ce clasificatorul acumulează exemple GRPO?
-Sau rămâne ridicat (GRPO este persistent hard-to-detect)?
+Key question: does FNR decrease as the classifier accumulates GRPO examples?
+Or does it remain high (GRPO is persistently hard to detect)?
 
-Rulare:
+Usage:
     python experiments/adversarial_loop.py
-    python experiments/adversarial_loop.py --skip-gen   # refolosește emailuri din cache
+    python experiments/adversarial_loop.py --skip-gen   # reuse cached emails
 """
 
 import sys
@@ -43,13 +43,13 @@ CLASSIFIER_HF = "xlm-roberta-base"
 OUT_DIR       = OUTPUT_DIR / "adversarial_loop"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-N_GRPO = 200  # emailuri GRPO per rundă
+N_GRPO = 200  # GRPO emails per round
 
 
-# ── Generare emailuri GRPO ────────────────────────────────────────────────────
+# ── GRPO email generation ─────────────────────────────────────────────────────
 
 def generate_grpo_emails(n: int, seed: int) -> list[str]:
-    """Generează n emailuri phishing cu modelul GRPO (seed diferit per rundă)."""
+    """Generates n phishing emails with the GRPO model (different seed per round)."""
     import gc
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -83,7 +83,7 @@ def generate_grpo_emails(n: int, seed: int) -> list[str]:
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
     )
-    print(f"[loop] Încarc GRPO model (seed={seed}, n={n})...")
+    print(f"[loop] Loading GRPO model (seed={seed}, n={n})...")
     tokenizer = AutoTokenizer.from_pretrained(
         BASE_MODEL_HF, trust_remote_code=True, token=os.environ.get("HF_TOKEN"),
     )
@@ -114,7 +114,7 @@ def generate_grpo_emails(n: int, seed: int) -> list[str]:
         generated = out[0][inputs["input_ids"].shape[1]:]
         emails.append(tokenizer.decode(generated, skip_special_tokens=True))
         if (i + 1) % 20 == 0:
-            print(f"[loop]   {i+1}/{n} emailuri generate")
+            print(f"[loop]   {i+1}/{n} emails generated")
 
     model.cpu()
     del model, base
@@ -123,7 +123,7 @@ def generate_grpo_emails(n: int, seed: int) -> list[str]:
     return emails
 
 
-# ── Antrenare și evaluare clasificator ────────────────────────────────────────
+# ── Classifier training and evaluation ───────────────────────────────────────
 
 def load_jsonl(path):
     with open(path, encoding="utf-8") as f:
@@ -138,7 +138,7 @@ def train_and_eval_fnr(
     tag: str,
     seed: int = 42,
 ) -> dict:
-    """Antrenează XLM-RoBERTa și returnează FNR pe setul de test adversarial."""
+    """Trains XLM-RoBERTa and returns FNR on the adversarial test set."""
     import gc
     import torch
     from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
@@ -149,7 +149,7 @@ def train_and_eval_fnr(
 
     random.seed(seed)
 
-    # Stratified 50/50 sampling (max 3000)
+    # Stratified 50/50 sampling (max 3 000)
     by_lbl = defaultdict(list)
     for i, l in enumerate(train_labels):
         by_lbl[l].append(i)
@@ -162,7 +162,7 @@ def train_and_eval_fnr(
     t_texts  = [train_texts[i]  for i in chosen]
     t_labels = [train_labels[i] for i in chosen]
 
-    print(f"[loop] Antrenez {tag}: {len(t_texts)} exemple "
+    print(f"[loop] Training {tag}: {len(t_texts)} examples "
           f"({sum(t_labels)} phishing + {len(t_labels)-sum(t_labels)} ham)")
 
     tok = AutoTokenizer.from_pretrained(CLASSIFIER_HF)
@@ -200,7 +200,7 @@ def train_and_eval_fnr(
     trainer = Trainer(model=model, args=args, train_dataset=train_ds)
     trainer.train()
 
-    # Evaluare pe test adversarial: phishing GRPO + ham
+    # Evaluate on adversarial test set: GRPO phishing + ham
     test_texts_all  = test_phishing + test_ham
     test_labels_all = [1] * len(test_phishing) + [0] * len(test_ham)
 
@@ -236,7 +236,7 @@ def plot_loop(rounds: list[dict], out_path: Path):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    round_labels = [f"Runda {r['round']}" for r in rounds]
+    round_labels = [f"Round {r['round']}" for r in rounds]
     fnr_vals     = [r["fnr"]         for r in rounds]
     f1_vals      = [r["f1_phishing"] for r in rounds]
     recall_vals  = [r["recall"]      for r in rounds]
@@ -244,9 +244,9 @@ def plot_loop(rounds: list[dict], out_path: Path):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
     for ax, vals, title, color, ylabel in [
-        (axes[0], fnr_vals,    "FNR per rundă",     "#F44336", "FNR"),
-        (axes[1], recall_vals, "Recall per rundă",  "#2196F3", "Recall"),
-        (axes[2], f1_vals,     "F1-phishing per rundă", "#4CAF50", "F1"),
+        (axes[0], fnr_vals,    "FNR per round",     "#F44336", "FNR"),
+        (axes[1], recall_vals, "Recall per round",  "#2196F3", "Recall"),
+        (axes[2], f1_vals,     "F1-phishing per round", "#4CAF50", "F1"),
     ]:
         ax.plot(round_labels, vals, marker="o", linewidth=2.5,
                 color=color, markersize=10)
@@ -260,17 +260,17 @@ def plot_loop(rounds: list[dict], out_path: Path):
         ax.axhline(0.5, color="gray", linestyle="--", alpha=0.4)
 
     fig.suptitle(
-        "Joc adversarial iterativ: adaptarea clasificatorului la phishing GRPO\n"
-        "(clasificator reantrenat cu emailuri GRPO acumulate per rundă)",
+        "Iterative adversarial game: classifier adaptation to GRPO phishing\n"
+        "(classifier retrained with accumulated GRPO emails per round)",
         fontsize=13, fontweight="bold"
     )
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[loop] Plot salvat: {out_path}")
+    print(f"[loop] Plot saved: {out_path}")
 
 
 def plot_escalation_detail(rounds: list[dict], out_path: Path):
-    """Plot detaliat cu N emailuri GRPO în setul de antrenare per rundă."""
+    """Detailed plot showing N GRPO emails in the training set per round."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -279,11 +279,11 @@ def plot_escalation_detail(rounds: list[dict], out_path: Path):
 
     x = [r["round"] for r in rounds]
     fnr  = [r["fnr"]  for r in rounds]
-    x_labels = [f"Runda {i}\n(C{i})" for i in x]
+    x_labels = [f"Round {i}\n(C{i})" for i in x]
 
     ax2 = ax.twinx()
     bars = ax2.bar(x, [r.get("n_grpo_in_train", 0) for r in rounds],
-                   alpha=0.2, color="#9C27B0", label="GRPO emails în antrenare")
+                   alpha=0.2, color="#9C27B0", label="GRPO emails in training")
     ax.plot(x, fnr, marker="o", linewidth=2.5, color="#F44336",
             markersize=12, label="FNR", zorder=5)
 
@@ -292,9 +292,9 @@ def plot_escalation_detail(rounds: list[dict], out_path: Path):
                     xytext=(0, 15), ha="center", fontsize=12,
                     fontweight="bold", color="#F44336")
 
-    ax.set_xlabel("Runda adversarială", fontsize=12)
-    ax.set_ylabel("FNR (rata phishing ratat)", fontsize=12, color="#F44336")
-    ax2.set_ylabel("N emailuri GRPO în antrenare", fontsize=12, color="#9C27B0")
+    ax.set_xlabel("Adversarial round", fontsize=12)
+    ax.set_ylabel("FNR (missed phishing rate)", fontsize=12, color="#F44336")
+    ax2.set_ylabel("N GRPO emails in training", fontsize=12, color="#9C27B0")
     ax.set_ylim(0, 1.15)
     ax.set_title("Escalation curve: FNR vs. experiența clasificatorului cu GRPO",
                  fontsize=13, fontweight="bold")
@@ -306,7 +306,7 @@ def plot_escalation_detail(rounds: list[dict], out_path: Path):
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[loop] Escalation plot salvat: {out_path}")
+    print(f"[loop] Escalation plot saved: {out_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -314,16 +314,16 @@ def plot_escalation_detail(rounds: list[dict], out_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-grpo",   type=int, default=N_GRPO,
-                        help="Emailuri GRPO per rundă")
+                        help="GRPO emails per round")
     parser.add_argument("--skip-gen", action="store_true",
-                        help="Refolosește emailuri GRPO din cache")
+                        help="Reuse cached GRPO emails")
     parser.add_argument("--seed",     type=int, default=42)
     args = parser.parse_args()
 
-    seeds = [args.seed, 123, 456]  # seeds diferite per rundă pentru diversitate
+    seeds = [args.seed, 123, 456]  # different seeds per round for diversity
 
-    # ── Încarcă date de bază ──────────────────────────────────────────────
-    print("[loop] Încarc train/test data...")
+    # ── Load base data ────────────────────────────────────────────────────
+    print("[loop] Loading train/test data...")
     train_data = load_jsonl(TRAIN_JSONL)
     test_data  = load_jsonl(TEST_JSONL)
 
@@ -332,45 +332,45 @@ def main():
     ham_test          = [d["email_text"] for d in test_data if d["label"] == 0]
     print(f"[loop] Train: {len(base_train_texts)} | Ham test: {len(ham_test)}")
 
-    # ── Generează / încarcă emailuri GRPO per rundă ───────────────────────
+    # ── Generate / load GRPO emails per round ────────────────────────────
     grpo_batches = []
     for i, seed in enumerate(seeds):
         cache = OUT_DIR / f"grpo_batch_round{i}_seed{seed}.json"
         if args.skip_gen and cache.exists():
-            print(f"[loop] Încarc batch runda {i} din cache ({cache.name})...")
+            print(f"[loop] Loading round {i} batch from cache ({cache.name})...")
             with open(cache) as f:
                 emails = json.load(f)
         else:
             emails = generate_grpo_emails(args.n_grpo, seed)
             with open(cache, "w", encoding="utf-8") as f:
                 json.dump(emails, f, ensure_ascii=False, indent=2)
-            print(f"[loop] Batch runda {i}: {len(emails)} emailuri salvate")
+            print(f"[loop] Round {i} batch: {len(emails)} emails saved")
         grpo_batches.append(emails)
 
-    # ── 3 runde de evaluare ───────────────────────────────────────────────
+    # ── 3 evaluation rounds ───────────────────────────────────────────────
     rounds_results = []
     accumulated_grpo = []
 
     print("\n" + "="*65)
-    print("JOC ADVERSARIAL ITERATIV — 3 RUNDE")
+    print("ITERATIVE ADVERSARIAL GAME — 3 ROUNDS")
     print("="*65)
 
     for round_idx in range(3):
-        print(f"\n[loop] ── RUNDA {round_idx} ──")
+        print(f"\n[loop] ── ROUND {round_idx} ──")
 
-        # Setul de antrenare: base + GRPO acumulat din rundele anterioare
+        # Training set: base + GRPO accumulated from previous rounds
         train_texts  = base_train_texts  + [e for batch in accumulated_grpo for e in batch]
         train_labels = base_train_labels + [1] * sum(len(b) for b in accumulated_grpo)
 
-        # Testăm pe emailuri GRPO din RUNDA CURENTĂ (fresh, nevăzute la antrenare)
+        # Test on GRPO emails from the CURRENT ROUND (fresh, unseen during training)
         test_grpo = grpo_batches[round_idx]
         n_ham_test = min(len(test_grpo), len(ham_test))
         test_ham_sample = random.sample(ham_test, n_ham_test)
 
         n_grpo_in_train = sum(len(b) for b in accumulated_grpo)
-        print(f"[loop] Antrenare pe: {len(train_texts)} total "
+        print(f"[loop] Training on: {len(train_texts)} total "
               f"({len(base_train_texts)} standard + {n_grpo_in_train} GRPO)")
-        print(f"[loop] Test pe: {len(test_grpo)} GRPO + {n_ham_test} ham")
+        print(f"[loop] Testing on: {len(test_grpo)} GRPO + {n_ham_test} ham")
 
         result = train_and_eval_fnr(
             train_texts=train_texts,
@@ -385,17 +385,17 @@ def main():
         result["seed_test"]       = seeds[round_idx]
         rounds_results.append(result)
 
-        print(f"[loop] Runda {round_idx}: FNR={result['fnr']:.4f} "
+        print(f"[loop] Round {round_idx}: FNR={result['fnr']:.4f} "
               f"F1={result['f1_phishing']:.4f} Recall={result['recall']:.4f}")
 
-        # Adaugă emailurile acestei runde în pool-ul acumulat
+        # Add this round's emails to the accumulated pool
         accumulated_grpo.append(test_grpo)
 
-    # ── Print tabel final ─────────────────────────────────────────────────
+    # ── Print final table ─────────────────────────────────────────────────
     print("\n" + "="*75)
-    print("REZULTATE JOC ADVERSARIAL ITERATIV")
+    print("ITERATIVE ADVERSARIAL GAME RESULTS")
     print("="*75)
-    print(f"{'Runda':<8} {'GRPO în train':>14} {'FNR':>8} {'Recall':>8} "
+    print(f"{'Round':<8} {'GRPO in train':>14} {'FNR':>8} {'Recall':>8} "
           f"{'F1-ph':>8} {'AUC-ROC':>9}")
     print("-"*65)
     for r in rounds_results:
@@ -403,30 +403,30 @@ def main():
         if r["round"] > 0:
             delta = r["fnr"] - rounds_results[r["round"]-1]["fnr"]
             trend = f" ({'↓' if delta < 0 else '↑'}{abs(delta):.4f})"
-        print(f"Runda {r['round']:<3} {r['n_grpo_in_train']:>14} {r['fnr']:>8.4f} "
+        print(f"Round {r['round']:<3} {r['n_grpo_in_train']:>14} {r['fnr']:>8.4f} "
               f"{r['recall']:>8.4f} {r['f1_phishing']:>8.4f} {r['auc_roc']:>9.4f}{trend}")
     print("="*75)
 
     fnr_delta_01 = rounds_results[1]["fnr"] - rounds_results[0]["fnr"]
     fnr_delta_12 = rounds_results[2]["fnr"] - rounds_results[1]["fnr"]
-    print(f"\nConcluzii:")
+    print(f"\nConclusions:")
     if fnr_delta_01 < -0.05:
-        print(f"  → FNR scade cu {fnr_delta_01:.4f} (R0→R1): clasificatorul se adaptează la GRPO!")
+        print(f"  → FNR drops by {fnr_delta_01:.4f} (R0→R1): classifier adapts to GRPO!")
     elif fnr_delta_01 > 0.05:
-        print(f"  → FNR crește cu {fnr_delta_01:+.4f} (R0→R1): GRPO devine mai greu de detectat!")
+        print(f"  → FNR rises by {fnr_delta_01:+.4f} (R0→R1): GRPO becomes harder to detect!")
     else:
-        print(f"  → FNR stabil (Δ={fnr_delta_01:+.4f}): nu există adaptare semnificativă R0→R1")
+        print(f"  → FNR stable (Δ={fnr_delta_01:+.4f}): no significant adaptation R0→R1")
 
     if fnr_delta_12 < -0.05:
-        print(f"  → FNR scade cu {fnr_delta_12:.4f} (R1→R2): adaptare continuă a clasificatorului")
+        print(f"  → FNR drops by {fnr_delta_12:.4f} (R1→R2): continued classifier adaptation")
     else:
-        print(f"  → FNR Δ={fnr_delta_12:+.4f} (R1→R2): platou de adaptare")
+        print(f"  → FNR Δ={fnr_delta_12:+.4f} (R1→R2): adaptation plateau")
 
     # ── Plot ──────────────────────────────────────────────────────────────
     plot_loop(rounds_results, OUT_DIR / "adversarial_loop.png")
     plot_escalation_detail(rounds_results, OUT_DIR / "escalation_curve.png")
 
-    # ── Salvare JSON ──────────────────────────────────────────────────────
+    # ── Save JSON ─────────────────────────────────────────────────────────
     output = {
         "config": {"n_grpo_per_round": args.n_grpo, "seeds": seeds,
                    "classifier": CLASSIFIER_HF},
@@ -435,7 +435,7 @@ def main():
     out_json = OUT_DIR / "adversarial_loop_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"\n[loop] Rezultate salvate: {out_json}")
+    print(f"\n[loop] Results saved: {out_json}")
 
 
 if __name__ == "__main__":

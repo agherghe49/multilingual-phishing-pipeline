@@ -1,14 +1,14 @@
 """
 experiments/per_locale_analysis.py
 
-Analiză per limbă: calitate generare, dificultate detecție, impact GRPO.
+Per-language analysis: generation quality, detection difficulty, GRPO impact.
 
-Combină date din:
-  - audit_log.jsonl        → calitate generare + self-correction per locale
-  - scaling_results.csv    → F1/FNR detecție per locale (dacă există)
-  - grpo_eval.json         → reward base vs GRPO per locale
+Combines data from:
+  - audit_log.jsonl        → generation quality + self-correction per locale
+  - scaling_results.csv    → F1/FNR detection per locale (if available)
+  - grpo_eval.json         → base vs. GRPO reward per locale
 
-Rulare:
+Usage:
     python experiments/per_locale_analysis.py
 """
 
@@ -35,7 +35,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 LOCALES = ["ro-RO", "en-US", "de-DE", "fr-FR", "it-IT"]
 
 
-# ── 1. Calitate generare per locale (din audit_log) ───────────────────────────
+# ── 1. Generation quality per locale (from audit_log) ────────────────────────
 
 def analyze_generation_per_locale() -> dict:
     with open(AUDIT_LOG, encoding="utf-8") as f:
@@ -69,7 +69,7 @@ def analyze_generation_per_locale() -> dict:
     return results
 
 
-# ── 2. Reward heuristic per locale (din dataset.jsonl) ────────────────────────
+# ── 2. Heuristic reward per locale (from dataset.jsonl) ──────────────────────
 
 def analyze_reward_per_locale() -> dict:
     with open(DATASET, encoding="utf-8") as f:
@@ -89,7 +89,7 @@ def analyze_reward_per_locale() -> dict:
             continue
         texts  = [e["email_text"] for e in emails]
         stages = [e.get("fraud_stage", "authority") for e in emails]
-        divs   = _diversity_scores(texts[:200])  # sample pentru viteză
+        divs   = _diversity_scores(texts[:200])  # sample for speed
 
         sample_size = min(200, len(texts))
         qs = [_heuristic_quality(texts[i], locale, stages[i]) for i in range(sample_size)]
@@ -107,6 +107,7 @@ def analyze_reward_per_locale() -> dict:
 
 
 # ── 3. GRPO impact per locale ────────────────────────────────────────────────
+
 
 def analyze_grpo_per_locale() -> dict:
     with open(GRPO_EVAL, encoding="utf-8") as f:
@@ -134,7 +135,7 @@ def analyze_grpo_per_locale() -> dict:
     return results
 
 
-# ── 4. Plot ────────────────────────────────────────────────────────────────────
+# ── 4. Plot ──────────────────────────────────────────────────────────────────
 
 def plot_per_locale(gen_results: dict, reward_results: dict,
                     grpo_results: dict, out_path: Path):
@@ -145,35 +146,35 @@ def plot_per_locale(gen_results: dict, reward_results: dict,
     locales = LOCALES
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-    # Panel 1: Scor self-correction per locale
+    # Panel 1: Self-correction score per locale
     ax = axes[0][0]
     scores = [gen_results.get(l, {}).get("avg_score", 0) for l in locales]
     stds   = [gen_results.get(l, {}).get("std_score", 0) for l in locales]
     bars = ax.bar(locales, scores, color="#4CAF50", alpha=0.85, yerr=stds, capsize=5)
-    ax.set_title("Scor mediu self-correction per locale", fontsize=11, fontweight="bold")
+    ax.set_title("Average self-correction score per locale", fontsize=11, fontweight="bold")
     ax.set_ylim(0, 10)
-    ax.axhline(6.0, color="red", linestyle="--", alpha=0.5, label="Prag acceptare (6.0)")
+    ax.axhline(6.0, color="red", linestyle="--", alpha=0.5, label="Acceptance threshold (6.0)")
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
     for bar, v in zip(bars, scores):
         ax.annotate(f"{v:.2f}", (bar.get_x()+bar.get_width()/2, v),
                     textcoords="offset points", xytext=(0,4), ha="center", fontsize=10)
 
-    # Panel 2: Iterații self-correction per locale
+    # Panel 2: Self-correction iterations per locale
     ax = axes[0][1]
     iters   = [gen_results.get(l, {}).get("avg_iters", 1) for l in locales]
     pct_multi = [gen_results.get(l, {}).get("pct_multi_iter", 0) for l in locales]
     x = np.arange(len(locales))
     w = 0.35
-    ax.bar(x - w/2, iters,     w, label="Iterații medii",    color="#2196F3", alpha=0.85)
+    ax.bar(x - w/2, iters,     w, label="Avg iterations",    color="#2196F3", alpha=0.85)
     ax.bar(x + w/2, [p/100 * 3 for p in pct_multi], w,
-           label="% multi-iter (scalat)", color="#FF9800", alpha=0.85)
+           label="% multi-iter (scaled)", color="#FF9800", alpha=0.85)
     ax.set_xticks(x); ax.set_xticklabels(locales)
-    ax.set_title("Complexitate self-correction per locale", fontsize=11, fontweight="bold")
+    ax.set_title("Self-correction complexity per locale", fontsize=11, fontweight="bold")
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
 
-    # Panel 3: Reward heuristic per locale (din dataset)
+    # Panel 3: Heuristic reward per locale (from dataset)
     ax = axes[1][0]
     rewards   = [reward_results.get(l, {}).get("avg_reward", 0)  for l in locales]
     qualities = [reward_results.get(l, {}).get("avg_quality", 0) for l in locales]
@@ -181,12 +182,12 @@ def plot_per_locale(gen_results: dict, reward_results: dict,
     ax.bar(x - w/2, rewards,   w, label="Reward total",  color="#9C27B0", alpha=0.85)
     ax.bar(x + w/2, qualities, w, label="Quality score", color="#E91E63", alpha=0.85)
     ax.set_xticks(x); ax.set_xticklabels(locales)
-    ax.set_title("Calitate generare (reward heuristic) per locale", fontsize=11, fontweight="bold")
+    ax.set_title("Generation quality (heuristic reward) per locale", fontsize=11, fontweight="bold")
     ax.set_ylim(0, 1)
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
 
-    # Panel 4: GRPO delta per locale
+    # Panel 4: GRPO reward delta per locale
     ax = axes[1][1]
     if grpo_results:
         base_vals  = [grpo_results.get(l, {}).get("base",  0) for l in locales]
@@ -200,33 +201,33 @@ def plot_per_locale(gen_results: dict, reward_results: dict,
             ax.annotate(f"Δ{d:+.3f}", (x[i], max(base_vals[i], grpo_vals[i])),
                         textcoords="offset points", xytext=(0, 8),
                         ha="center", fontsize=9, color="green" if d > 0 else "red")
-        ax.set_title("Impact GRPO per locale (reward API)", fontsize=11, fontweight="bold")
+        ax.set_title("GRPO impact per locale (API reward)", fontsize=11, fontweight="bold")
         ax.set_ylim(0, 0.8)
         ax.legend(fontsize=9)
         ax.grid(axis="y", alpha=0.3)
 
-    fig.suptitle("Analiză per limbă: generare, self-correction și GRPO",
+    fig.suptitle("Per-language analysis: generation, self-correction and GRPO",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[locale] Plot salvat: {out_path}")
+    print(f"[locale] Plot saved: {out_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    print("[locale] Analizez generare per locale din audit_log...")
+    print("[locale] Analyzing generation per locale from audit_log...")
     gen_results = analyze_generation_per_locale()
 
-    print("[locale] Calculez reward heuristic per locale din dataset...")
+    print("[locale] Computing heuristic reward per locale from dataset...")
     reward_results = analyze_reward_per_locale()
 
-    print("[locale] Analizez impact GRPO per locale...")
+    print("[locale] Analyzing GRPO impact per locale...")
     grpo_results = analyze_grpo_per_locale() if GRPO_EVAL.exists() else {}
 
-    # ── Print tabel ───────────────────────────────────────────────────────
+    # ── Print table ───────────────────────────────────────────────────────
     print("\n" + "="*90)
-    print("ANALIZĂ PER LIMBĂ")
+    print("PER-LANGUAGE ANALYSIS")
     print("="*90)
     print(f"\n{'Locale':<8} {'N gen':>6} {'SC score':>9} {'Acc%':>6} {'Avg iter':>9} "
           f"{'HReward':>8} {'Base R':>8} {'GRPO R':>8} {'Δ':>7}")
@@ -246,7 +247,7 @@ def main():
     plot_per_locale(gen_results, reward_results, grpo_results,
                     OUT_DIR / "per_locale_analysis.png")
 
-    # ── Salvare JSON ──────────────────────────────────────────────────────
+    # ── Save JSON ─────────────────────────────────────────────────────────
     output = {
         "generation":  gen_results,
         "reward":      reward_results,
@@ -255,7 +256,7 @@ def main():
     out_json = OUT_DIR / "per_locale_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"\n[locale] Rezultate salvate: {out_json}")
+    print(f"\n[locale] Results saved: {out_json}")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 """
 experiments/convergence_curve.py
 
-Trasează curba de convergență GRPO: reward (și componentele sale) vs. numărul de pași.
-Puncte evaluate: step 0 (base), step 200, step 400, step 600 (model final).
+Plots the GRPO convergence curve: reward (and its components) vs. number of steps.
+Evaluated points: step 0 (base), step 200, step 400, step 600 (final model).
 
-Rulare:
+Usage:
     python experiments/convergence_curve.py
     python experiments/convergence_curve.py --reward heuristic --n 20
 """
@@ -29,9 +29,9 @@ OUT_JSON    = OUTPUT_DIR / "grpo_convergence.json"
 
 
 def load_step400_results():
-    """Încarcă rezultatele deja calculate pentru step 400."""
+    """Loads already-computed results for step 400."""
     if not EVAL_JSON.exists():
-        raise FileNotFoundError(f"grpo_eval.json negăsit la {EVAL_JSON}. Rulează mai întâi eval_grpo.py.")
+        raise FileNotFoundError(f"grpo_eval.json not found at {EVAL_JSON}. Run eval_grpo.py first.")
     with open(EVAL_JSON, encoding="utf-8") as f:
         data = json.load(f)
     base_scores = [s["base_score"] for s in data["samples"]]
@@ -51,8 +51,8 @@ def plot_convergence(results: dict, out_path: Path):
 
     steps    = sorted(results.keys())
     metrics  = ["reward", "quality", "diversity", "format"]
-    labels   = {"reward": "Reward total", "quality": "Calitate",
-                 "diversity": "Diversitate", "format": "Format"}
+    labels   = {"reward": "Total reward", "quality": "Quality",
+                 "diversity": "Diversity", "format": "Format"}
     colors   = {"reward": "#1f77b4", "quality": "#ff7f0e",
                  "diversity": "#2ca02c", "format": "#d62728"}
 
@@ -64,8 +64,8 @@ def plot_convergence(results: dict, out_path: Path):
         ax.plot(steps, vals, "o-", color=colors[metric], linewidth=2,
                 markersize=8, label=labels[metric])
         ax.set_title(labels[metric], fontsize=13, fontweight="bold")
-        ax.set_xlabel("Pași GRPO")
-        ax.set_ylabel("Scor mediu")
+        ax.set_xlabel("GRPO steps")
+        ax.set_ylabel("Average score")
         ax.set_xticks(steps)
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(
             lambda x, _: "Base" if x == 0 else f"{int(x)}"))
@@ -76,7 +76,7 @@ def plot_convergence(results: dict, out_path: Path):
             ax.annotate(f"{y:.3f}", (x, y), textcoords="offset points",
                         xytext=(0, 10), ha="center", fontsize=10)
 
-    fig.suptitle("Convergență GRPO — Qwen2.5-7B-Instruct (QLoRA, RTX 4090)",
+    fig.suptitle("GRPO Convergence — Qwen2.5-7B-Instruct (QLoRA, RTX 4090)",
                  fontsize=14, fontweight="bold", y=1.01)
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,15 +98,15 @@ def main():
     except ImportError as e:
         print(f"Import error: {e}"); return
 
-    # ── Încarcă rezultate step 400 din fișierul existent ─────────────────
-    print("[convergence] Încarc rezultate step 400 din grpo_eval.json...")
+    # ── Load step 400 results from existing file ──────────────────────────
+    print("[convergence] Loading step 400 results from grpo_eval.json...")
     base_scores_400, grpo_scores_400, cfg = load_step400_results()
     n_prompts = min(args.n, len(base_scores_400))
     base_scores_400 = base_scores_400[:n_prompts]
     grpo_scores_400 = grpo_scores_400[:n_prompts]
-    print(f"[convergence] {n_prompts} prompturi din grpo_eval.json (seed={cfg['seed']})")
+    print(f"[convergence] {n_prompts} prompts from grpo_eval.json (seed={cfg['seed']})")
 
-    # Refolosim același seed ca grpo_eval.json pentru consistență
+    # Reuse the same seed as grpo_eval.json for consistency
     seed = cfg.get("seed", args.seed)
     prompts = load_prompts(n_prompts, seed)[:n_prompts]
 
@@ -115,7 +115,7 @@ def main():
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
     )
 
-    print("\n[convergence] Încarc tokenizer...")
+    print("\n[convergence] Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(
         BASE_MODEL, trust_remote_code=True, token=os.environ.get("HF_TOKEN"),
     )
@@ -125,7 +125,7 @@ def main():
 
     def eval_checkpoint(ckpt_path, label):
         import gc
-        print(f"\n[convergence] Evaluez {label} ({ckpt_path.name})...")
+        print(f"\n[convergence] Evaluating {label} ({ckpt_path.name})...")
         gc.collect()
         torch.cuda.empty_cache()
         base_m = AutoModelForCausalLM.from_pretrained(
@@ -149,8 +149,8 @@ def main():
     # ── Step 400 ──────────────────────────────────────────────────────────
     scores_400 = eval_checkpoint(CKPT_400, "checkpoint-400")
 
-    # ── Asamblează rezultatele ─────────────────────────────────────────────
-    # grpo_eval.json = model final (step 600)
+    # ── Assemble results ───────────────────────────────────────────────────
+    # grpo_eval.json = final model (step 600)
     results = {
         0:   {m: avg(base_scores_400, m) for m in ["reward", "quality", "diversity", "format"]},
         200: {m: avg(scores_200,      m) for m in ["reward", "quality", "diversity", "format"]},
@@ -158,7 +158,7 @@ def main():
         600: {m: avg(grpo_scores_400, m) for m in ["reward", "quality", "diversity", "format"]},
     }
 
-    print("\n[convergence] Rezultate:")
+    print("\n[convergence] Results:")
     print(f"{'Metric':<12} {'Base':>8} {'200p':>8} {'400p':>8} {'600p':>8}")
     print("-" * 52)
     for m in ["reward", "quality", "diversity", "format"]:
@@ -168,12 +168,12 @@ def main():
     # ── Plot ───────────────────────────────────────────────────────────────
     plot_convergence(results, OUT_PNG)
 
-    # ── Salvare JSON ───────────────────────────────────────────────────────
+    # ── Save JSON ─────────────────────────────────────────────────────────
     output = {"config": {"n": n_prompts, "reward": args.reward, "seed": seed},
               "results": {str(k): v for k, v in results.items()}}
     with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"[convergence] JSON salvat: {OUT_JSON}")
+    print(f"[convergence] JSON saved: {OUT_JSON}")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 """
 experiments/significance_test.py
 
-Rulează experimentele principale cu N seeds și raportează mean ± std.
-Acoperă: scaling laws (XLM-RoBERTa, mDeBERTa-v3, TF-IDF+LR) + adversarial eval FNR.
+Runs main experiments over N seeds and reports mean ± std.
+Covers: scaling laws (XLM-RoBERTa, mDeBERTa-v3, TF-IDF+LR) + adversarial eval FNR.
 
-Rulare:
+Usage:
     python experiments/significance_test.py
     python experiments/significance_test.py --seeds 42,123,456,789 --n-values 500,1000,2000
 """
@@ -27,7 +27,7 @@ OUT_JSON = RESULTS_DIR / "significance_results.json"
 OUT_CSV  = RESULTS_DIR / "significance_results.csv"
 
 
-# ── Import helpers din scaling_laws ──────────────────────────────────────────
+# ── Import helpers from scaling_laws ─────────────────────────────────────────
 
 def load_data():
     from experiments.scaling_laws import load_jsonl
@@ -38,7 +38,7 @@ def load_data():
 
 
 def run_one_seed(train, test, model_key: str, n: int, seed: int) -> dict:
-    """Rulează un singur experiment (model, n, seed) și returnează metrici."""
+    """Runs a single experiment (model, n, seed) and returns metrics."""
     from experiments.scaling_laws import run_lr, run_transformer, balanced_sample
 
     MODEL_CFGS = {
@@ -83,12 +83,12 @@ def run_one_seed(train, test, model_key: str, n: int, seed: int) -> dict:
     return result
 
 
-# ── Adversarial eval cu seed variabil ────────────────────────────────────────
+# ── Adversarial eval with variable seed ──────────────────────────────────────
 
 def run_adversarial_one_seed(seed: int, n_train: int = 1000, n_grpo: int = 100) -> dict:
     """
-    Re-rulează evaluarea adversarială cu un seed diferit (split diferit).
-    Folosește emailurile GRPO pre-generate (adv_grpo_emails.json).
+    Re-runs adversarial evaluation with a different seed (different split).
+    Uses pre-generated GRPO emails (adv_grpo_emails.json).
     """
     import torch
     from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
@@ -100,7 +100,7 @@ def run_adversarial_one_seed(seed: int, n_train: int = 1000, n_grpo: int = 100) 
     random.seed(seed)
     np.random.seed(seed)
 
-    # Încarcă emailuri GRPO pre-generate
+    # Load pre-generated GRPO emails
     grpo_path = OUTPUT_DIR / "adversarial_eval" / "adv_grpo_emails.json"
     with open(grpo_path) as f:
         grpo_raw = json.load(f)
@@ -114,7 +114,7 @@ def run_adversarial_one_seed(seed: int, n_train: int = 1000, n_grpo: int = 100) 
     random.shuffle(grpo_texts)
     grpo_texts = grpo_texts[:n_grpo]
 
-    # Încarcă date standard
+    # Load standard data
     def load_jsonl(path):
         with open(path) as f:
             return [json.loads(l) for l in f if l.strip()]
@@ -122,7 +122,7 @@ def run_adversarial_one_seed(seed: int, n_train: int = 1000, n_grpo: int = 100) 
     train_all = load_jsonl(OUTPUT_DIR / "train.jsonl")
     test_all  = load_jsonl(OUTPUT_DIR / "test.jsonl")
 
-    # Eșantionare stratificată pentru antrenare
+    # Stratified sampling for training
     rng = random.Random(seed)
     phishing_train = [r for r in train_all if r["label"] == 1]
     ham_train      = [r for r in train_all if r["label"] == 0]
@@ -232,7 +232,7 @@ def main():
     # ── 1. Scaling laws × seeds ──────────────────────────────────────────────
     if not args.skip_scaling:
         print("\n" + "="*60)
-        print("SCALING LAWS — semnificație statistică")
+        print("SCALING LAWS — statistical significance")
         print("="*60)
         train, test = load_data()
 
@@ -248,7 +248,7 @@ def main():
                         seed_results.append(r)
                         print(f"F1={r.get('f1',0):.4f} FNR={r.get('fnr',0):.4f}")
                     else:
-                        print("skip (eroare)")
+                        print("skip (error)")
 
                 if seed_results:
                     f1_vals  = [r.get("f1",   0) for r in seed_results]
@@ -272,7 +272,7 @@ def main():
     # ── 2. Adversarial eval × seeds ──────────────────────────────────────────
     if not args.skip_adversarial:
         print("\n" + "="*60)
-        print("ADVERSARIAL EVAL — semnificație statistică")
+        print("ADVERSARIAL EVAL — statistical significance")
         print("="*60)
         adv_runs = []
         for seed in seeds:
@@ -297,7 +297,7 @@ def main():
     # ── Salvare ───────────────────────────────────────────────────────────────
     with open(OUT_JSON, "w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    print(f"\n[OK] Rezultate salvate → {OUT_JSON}")
+    print(f"\n[OK] Results saved → {OUT_JSON}")
 
     # CSV pentru scaling
     if results["scaling"]:

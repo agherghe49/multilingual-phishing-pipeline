@@ -1,12 +1,12 @@
 """
 experiments/linguistic_analysis.py
 
-Analiză lingvistică a emailurilor generate: vocabular, complexitate sintactică,
-densitate keywords per locale și fraud_stage.
+Linguistic analysis of generated emails: vocabulary, syntactic complexity,
+keyword density per locale and fraud_stage.
 
-Nu necesită GPU sau apeluri API — rulează pe dataset.jsonl existent.
+No GPU or API calls required — runs on the existing dataset.jsonl.
 
-Rulare:
+Usage:
     python experiments/linguistic_analysis.py
 """
 
@@ -57,7 +57,7 @@ def load_dataset(path: Path) -> list[dict]:
 
 
 def type_token_ratio(text: str) -> float:
-    """Diversitate vocabular: tipuri unice / total tokens."""
+    """Vocabulary diversity: unique types / total tokens."""
     tokens = re.findall(r'\b\w+\b', text.lower())
     if not tokens:
         return 0.0
@@ -74,7 +74,7 @@ def avg_sentence_length(text: str) -> float:
 
 
 def keyword_density(text: str, keywords: list[str]) -> float:
-    """Cuvinte cheie per 100 cuvinte."""
+    """Keywords per 100 words."""
     text_lower = text.lower()
     words = len(text_lower.split())
     if words == 0:
@@ -84,7 +84,7 @@ def keyword_density(text: str, keywords: list[str]) -> float:
 
 
 def analyze_corpus(emails: list[dict]) -> dict:
-    """Calculează metricile lingvistice pentru o listă de emailuri."""
+    """Computes linguistic metrics for a list of emails."""
     if not emails:
         return {}
     texts = [e["email_text"] for e in emails]
@@ -107,8 +107,8 @@ def plot_per_locale(results_phishing: dict, results_ham: dict, out_path: Path):
 
     locales = sorted(results_phishing.keys())
     metrics = ["avg_words", "avg_ttr", "urgency_density", "authority_density"]
-    labels  = ["Lungime medie (cuvinte)", "TTR (diversitate vocab.)",
-               "Densitate urgency (/100 cuv.)", "Densitate authority (/100 cuv.)"]
+    labels  = ["Average length (words)", "TTR (vocab diversity)",
+               "Urgency density (/100 words)", "Authority density (/100 words)"]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
     axes = axes.flatten()
@@ -119,7 +119,7 @@ def plot_per_locale(results_phishing: dict, results_ham: dict, out_path: Path):
         x = np.arange(len(locales))
         w = 0.35
         ax.bar(x - w/2, ph_vals,  w, label="Phishing",  color="#F44336", alpha=0.85)
-        ax.bar(x + w/2, ham_vals, w, label="Ham legitim", color="#2196F3", alpha=0.85)
+        ax.bar(x + w/2, ham_vals, w, label="Legitimate ham", color="#2196F3", alpha=0.85)
         ax.set_xticks(x)
         ax.set_xticklabels(locales, fontsize=10)
         ax.set_title(label, fontsize=12, fontweight="bold")
@@ -131,11 +131,11 @@ def plot_per_locale(results_phishing: dict, results_ham: dict, out_path: Path):
             ax.annotate(f"{hv:.2f}", (x[i]+w/2, hv), textcoords="offset points",
                         xytext=(0,3), ha="center", fontsize=8)
 
-    fig.suptitle("Analiză lingvistică: Phishing vs. Ham per Locale",
+    fig.suptitle("Linguistic analysis: Phishing vs. Ham per Locale",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[ling] Plot locale salvat: {out_path}")
+    print(f"[ling] Locale plot saved: {out_path}")
 
 
 def plot_per_stage(results_by_stage: dict, out_path: Path):
@@ -145,8 +145,8 @@ def plot_per_stage(results_by_stage: dict, out_path: Path):
 
     stages  = sorted(results_by_stage.keys())
     metrics = ["avg_words", "urgency_density", "authority_density", "threat_density"]
-    labels  = ["Lungime medie (cuvinte)", "Densitate urgency",
-               "Densitate authority", "Densitate threat"]
+    labels  = ["Average length (words)", "Urgency density",
+               "Authority density", "Threat density"]
     colors  = ["#FF5722", "#E91E63", "#9C27B0", "#3F51B5"]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
@@ -163,15 +163,15 @@ def plot_per_stage(results_by_stage: dict, out_path: Path):
                         textcoords="offset points", xytext=(0,3),
                         ha="center", fontsize=9)
 
-    fig.suptitle("Caracteristici lingvistice per Fraud Stage (phishing)",
+    fig.suptitle("Linguistic features per Fraud Stage (phishing)",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[ling] Plot fraud stage salvat: {out_path}")
+    print(f"[ling] Fraud stage plot saved: {out_path}")
 
 
 def main():
-    print("[ling] Încarc dataset...")
+    print("[ling] Loading dataset...")
     data = load_dataset(OUTPUT_DIR / "dataset.jsonl")
     print(f"[ling] {len(data)} emailuri")
 
@@ -179,12 +179,12 @@ def main():
     ham      = [d for d in data if d["label"] == 0]
     print(f"[ling] {len(phishing)} phishing | {len(ham)} ham")
 
-    # ── Analiză per locale ────────────────────────────────────────────────
+    # ── Per-locale analysis ───────────────────────────────────────────────
     locales = ["ro-RO", "en-US", "de-DE", "fr-FR", "it-IT"]
     results_phishing = {}
     results_ham      = {}
 
-    print("\n[ling] Analiză per locale:")
+    print("\n[ling] Per-locale analysis:")
     print(f"{'Locale':<8} {'Label':<10} {'N':>5} {'Words':>7} {'TTR':>7} {'Urgency':>9} {'Authority':>11}")
     print("-" * 65)
 
@@ -201,12 +201,12 @@ def main():
               f"{rh['avg_ttr']:>7.4f} {rh['urgency_density']:>9.4f} {rh['authority_density']:>11.4f}")
         print()
 
-    # ── Analiză per fraud_stage (phishing only) ───────────────────────────
+    # ── Per fraud_stage analysis (phishing only) ──────────────────────────
     stages = ["initial_contact", "trust_building", "urgency_pressure",
               "credential_harvest", "payment_extraction", "authority", "urgency"]
     results_by_stage = {}
 
-    print("\n[ling] Analiză per fraud_stage (phishing):")
+    print("\n[ling] Per fraud_stage analysis (phishing):")
     print(f"{'Stage':<22} {'N':>5} {'Words':>7} {'Urgency':>9} {'Authority':>11} {'Threat':>8}")
     print("-" * 65)
 
@@ -235,7 +235,7 @@ def main():
         plot_per_stage(results_by_stage,
                        OUT_DIR / "linguistic_per_stage.png")
 
-    # ── Salvare JSON ──────────────────────────────────────────────────────
+    # ── Save JSON ─────────────────────────────────────────────────────────
     output = {
         "per_locale_phishing": results_phishing,
         "per_locale_ham":      results_ham,
@@ -245,7 +245,7 @@ def main():
     out_json = OUT_DIR / "linguistic_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"\n[ling] Rezultate salvate: {out_json}")
+    print(f"\n[ling] Results saved: {out_json}")
 
 
 if __name__ == "__main__":

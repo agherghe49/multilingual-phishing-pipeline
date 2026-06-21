@@ -1,14 +1,14 @@
 """
 experiments/generator_fnr_comparison.py
 
-Compară FNR-ul detecției pentru 3 surse de phishing:
-  1. Standard pipeline (DeepSeek + RAG + SC) — din test.jsonl
-  2. Base Qwen2.5-7B-Instruct (fără GRPO)
+Compares detection FNR for 3 phishing sources:
+  1. Standard pipeline (DeepSeek + RAG + SC) — from test.jsonl
+  2. Base Qwen2.5-7B-Instruct (no GRPO)
   3. GRPO fine-tuned Qwen2.5-7B-Instruct
 
-Întrebarea: GRPO produce phishing mai greu de detectat decât modelul de bază?
+Key question: does GRPO produce phishing that is harder to detect than the base model?
 
-Rulare:
+Usage:
     python experiments/generator_fnr_comparison.py
     python experiments/generator_fnr_comparison.py --n-gen 50 --n-train 1000
 """
@@ -36,10 +36,10 @@ OUT_JSON      = OUT_DIR / "generator_fnr_results.json"
 OUT_PNG       = OUT_DIR / "generator_fnr_comparison.png"
 
 
-# ── Generare emailuri ─────────────────────────────────────────────────────────
+# ── Email generation ──────────────────────────────────────────────────────────
 
 def build_prompts(n: int, seed: int) -> list[dict]:
-    """Construiește n prompturi diverse pentru generare phishing."""
+    """Builds n diverse prompts for phishing generation."""
     from orchestrator import _infer_fraud_stage
     random.seed(seed)
     stages = ["initial_contact", "trust_building", "urgency_pressure",
@@ -65,12 +65,12 @@ def build_prompts(n: int, seed: int) -> list[dict]:
 
 
 def generate_emails(n: int, seed: int, use_grpo: bool) -> list[str]:
-    """Generează n emailuri phishing cu modelul base sau GRPO."""
+    """Generates n phishing emails with the base or GRPO model."""
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
     tag = "GRPO" if use_grpo else "Base"
-    print(f"\n[gen] Încarc model {tag} ({BASE_MODEL_HF}) ...")
+    print(f"\n[gen] Loading {tag} model ({BASE_MODEL_HF}) ...")
 
     bnb = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
@@ -93,7 +93,7 @@ def generate_emails(n: int, seed: int, use_grpo: bool) -> list[str]:
     if use_grpo:
         from peft import PeftModel
         model = PeftModel.from_pretrained(base, str(GRPO_DIR))
-        print(f"[gen] PEFT adapter încărcat din {GRPO_DIR}")
+        print(f"[gen] PEFT adapter loaded from {GRPO_DIR}")
     else:
         model = base
 
@@ -117,17 +117,17 @@ def generate_emails(n: int, seed: int, use_grpo: bool) -> list[str]:
         email_txt = tokenizer.decode(generated, skip_special_tokens=True).strip()
         emails.append(email_txt)
         if (i + 1) % 10 == 0:
-            print(f"[gen] {tag}: {i+1}/{n} emailuri generate")
+            print(f"[gen] {tag}: {i+1}/{n} emails generated")
 
     del model, base
     import torch; torch.cuda.empty_cache()
     return emails
 
 
-# ── Clasificator ─────────────────────────────────────────────────────────────
+# ── Classifier ───────────────────────────────────────────────────────────────
 
 def train_classifier(train_texts, train_labels, seed: int = 42):
-    """Antrenează XLM-RoBERTa și returnează trainer + tokenizer."""
+    """Trains XLM-RoBERTa and returns trainer + tokenizer."""
     import torch
     from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
                                TrainingArguments, Trainer)
@@ -218,7 +218,7 @@ def plot_results(results: dict, out_path: Path) -> None:
     bars1 = ax1.bar(x, fnr_vals, color=colors, alpha=0.85, edgecolor="black", linewidth=0.8)
     ax1.set_xticks(x); ax1.set_xticklabels(labels, fontsize=10)
     ax1.set_ylabel("FNR (False Negative Rate)")
-    ax1.set_title("FNR per Generator\n(↑ = mai greu de detectat)")
+    ax1.set_title("FNR per Generator\n(↑ = harder to detect)")
     ax1.set_ylim(0, 1.0)
     for bar, val in zip(bars1, fnr_vals):
         ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
@@ -227,18 +227,18 @@ def plot_results(results: dict, out_path: Path) -> None:
     bars2 = ax2.bar(x, f1_vals, color=colors, alpha=0.85, edgecolor="black", linewidth=0.8)
     ax2.set_xticks(x); ax2.set_xticklabels(labels, fontsize=10)
     ax2.set_ylabel("F1 (phishing class)")
-    ax2.set_title("F1 detecție per Generator\n(↓ = mai greu de detectat)")
+    ax2.set_title("Detection F1 per Generator\n(↓ = harder to detect)")
     ax2.set_ylim(0, 1.05)
     for bar, val in zip(bars2, f1_vals):
         ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
                  f"{val:.4f}", ha="center", va="bottom", fontsize=9)
 
-    plt.suptitle("Comparație generatoare: Standard pipeline vs Base Qwen vs GRPO",
+    plt.suptitle("Generator comparison: Standard pipeline vs Base Qwen vs GRPO",
                  fontsize=12, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"[plot] Salvat → {out_path}")
+    print(f"[plot] Saved → {out_path}")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -246,12 +246,12 @@ def plot_results(results: dict, out_path: Path) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-gen",   type=int, default=100,
-                        help="Emailuri generate per model (base + GRPO)")
+                        help="Emails generated per model (base + GRPO)")
     parser.add_argument("--n-train", type=int, default=1000,
-                        help="Exemple antrenare clasificator (per clasă)")
+                        help="Classifier training examples (per class)")
     parser.add_argument("--seed",    type=int, default=42)
     parser.add_argument("--skip-gen", action="store_true",
-                        help="Nu regenera emailuri, folosește cache dacă există")
+                        help="Skip generation and reuse cached emails if available")
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -262,7 +262,7 @@ def main():
     print(f"n_gen={args.n_gen}  n_train={args.n_train}  seed={args.seed}")
     print("="*60)
 
-    # ── Încarcă date standard ─────────────────────────────────────────────────
+    # ── Load standard data ────────────────────────────────────────────────────
     def load_jsonl(path):
         with open(path) as f:
             return [json.loads(l) for l in f if l.strip()]
@@ -281,45 +281,45 @@ def main():
     train_texts  = [r["email_text"] for r in train_sub]
     train_labels = [r["label"]      for r in train_sub]
 
-    # Standard phishing test (din test set — DeepSeek pipeline)
+    # Standard phishing test (from test set — DeepSeek pipeline)
     std_phishing = rng.sample([r for r in test_all if r["label"] == 1],
                               min(args.n_gen, len([r for r in test_all if r["label"]==1])))
     std_texts    = [r["email_text"] for r in std_phishing]
 
-    # Ham pentru evaluare
+    # Ham for evaluation
     ham_test = rng.sample([r for r in test_all if r["label"] == 0],
                           min(args.n_gen, len([r for r in test_all if r["label"]==0])))
     ham_texts = [r["email_text"] for r in ham_test]
 
-    # ── Generare Base Qwen ────────────────────────────────────────────────────
+    # ── Generate Base Qwen emails ─────────────────────────────────────────────
     base_cache = OUT_DIR / "base_qwen_emails.json"
     if args.skip_gen and base_cache.exists():
         with open(base_cache) as f:
             base_emails = json.load(f)
-        print(f"[cache] Base Qwen: {len(base_emails)} emailuri încărcate")
+        print(f"[cache] Base Qwen: {len(base_emails)} emails loaded")
     else:
         base_emails = generate_emails(args.n_gen, args.seed, use_grpo=False)
         with open(base_cache, "w") as f:
             json.dump(base_emails, f, ensure_ascii=False, indent=2)
         print(f"[saved] {len(base_emails)} emailuri Base Qwen → {base_cache}")
 
-    # ── Generare GRPO Qwen ────────────────────────────────────────────────────
+    # ── Generate GRPO Qwen emails ─────────────────────────────────────────────
     grpo_cache = OUT_DIR / "grpo_qwen_emails.json"
     if args.skip_gen and grpo_cache.exists():
         with open(grpo_cache) as f:
             grpo_emails = json.load(f)
-        print(f"[cache] GRPO Qwen: {len(grpo_emails)} emailuri încărcate")
+        print(f"[cache] GRPO Qwen: {len(grpo_emails)} emails loaded")
     else:
         grpo_emails = generate_emails(args.n_gen, args.seed + 1, use_grpo=True)
         with open(grpo_cache, "w") as f:
             json.dump(grpo_emails, f, ensure_ascii=False, indent=2)
         print(f"[saved] {len(grpo_emails)} emailuri GRPO → {grpo_cache}")
 
-    # ── Antrenare clasificator ─────────────────────────────────────────────────
-    print(f"\n[clf] Antrenare clasificator pe {len(train_texts)} exemple ...")
+    # ── Train classifier ──────────────────────────────────────────────────────
+    print(f"\n[clf] Training classifier on {len(train_texts)} examples ...")
     trainer, tok = train_classifier(train_texts, train_labels, seed=args.seed)
 
-    # ── Evaluare FNR per sursă ────────────────────────────────────────────────
+    # ── Evaluate FNR per source ───────────────────────────────────────────────
     results = {}
 
     print("\n[eval] Standard pipeline (DeepSeek+RAG+SC) ...")
@@ -327,7 +327,7 @@ def main():
     results["Standard\n(DeepSeek)"] = compute_fnr(trainer, tok,
                                                     std_texts + ham_texts, std_labels_eval)
 
-    print("[eval] Base Qwen (fără GRPO) ...")
+    print("[eval] Base Qwen (no GRPO) ...")
     base_labels_eval = [1] * len(base_emails) + [0] * len(ham_texts[:len(base_emails)])
     results["Base Qwen\n(no GRPO)"] = compute_fnr(trainer, tok,
                                                     base_emails + ham_texts[:len(base_emails)],
@@ -339,7 +339,7 @@ def main():
                                                        grpo_emails + ham_texts[:len(grpo_emails)],
                                                        grpo_labels_eval)
 
-    # ── Print tabel ───────────────────────────────────────────────────────────
+    # ── Print results table ───────────────────────────────────────────────────
     print("\n" + "="*55)
     print(f"  {'Generator':30} | {'FNR':>6} | {'F1':>6} | {'Prec':>6}")
     print("-"*55)
@@ -347,7 +347,7 @@ def main():
         print(f"  {name.replace(chr(10),' '):30} | {m['fnr']:>6.4f} | {m['f1']:>6.4f} | {m['precision']:>6.4f}")
     print("="*55)
 
-    # ── Salvare ───────────────────────────────────────────────────────────────
+    # ── Save results ──────────────────────────────────────────────────────────
     key_grpo = "GRPO Qwen\n(fine-tuned)"
     key_base = "Base Qwen\n(no GRPO)"
     grpo_fnr = results[key_grpo]["fnr"]
@@ -362,7 +362,7 @@ def main():
     }
     with open(OUT_JSON, "w") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
-    print(f"\n[OK] Rezultate → {OUT_JSON}")
+    print(f"\n[OK] Results → {OUT_JSON}")
 
     plot_results({k.replace("\n", " "): v for k, v in results.items()}, OUT_PNG)
 

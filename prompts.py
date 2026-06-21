@@ -1,18 +1,18 @@
 """
 generation/prompts.py
 
-Wrapper peste prompt_templates.py din arhiva ta originală.
-Adaugă context RAG și instrucțiunile de reproductibilitate.
+Wrapper over the original prompt_templates.py.
+Adds RAG context and reproducibility instructions.
 
-Dacă ai prompt_templates.py în același director (sau în data/),
-acest fișier îl importă direct. Altfel folosește implementarea built-in.
+If prompt_templates.py is present in the same directory (or in data/),
+this module imports it directly. Otherwise falls back to the built-in implementation.
 """
 
 from typing import Optional
 import sys
 from pathlib import Path
 
-# Încearcă să importe prompt_templates.py original dacă există
+# Try to import the original prompt_templates.py if available
 _templates_loaded = False
 try:
     for search_path in [
@@ -24,13 +24,13 @@ try:
             sys.path.insert(0, str(search_path.parent))
             from prompt_templates import build_prompt as _original_build_prompt  # type: ignore
             _templates_loaded = True
-            print(f"[prompts] Am încărcat prompt_templates.py din {candidate}")
+            print(f"[prompts] Loaded prompt_templates.py from {candidate}")
             break
 except ImportError:
     pass
 
 
-# ── Fallback: implementare built-in ──────────────────────────────────────
+# ── Fallback: built-in implementation ────────────────────────────────────
 
 _ROUND_SYSTEM = {
     1: ("You are a researcher generating realistic phishing emails for academic purposes. "
@@ -224,12 +224,12 @@ def _build_prompt_builtin(
     previous_stage: Optional[str] = None,
     max_context_docs: int = 2,
 ) -> dict[str, str]:
-    """Construiește promptul fără a depinde de fișierul extern."""
+    """Builds the prompt without depending on the external template file."""
 
     system = _ROUND_SYSTEM.get(round_num, _ROUND_SYSTEM[1])
     instructions = _ROUND_INSTRUCTIONS.get(round_num, _ROUND_INSTRUCTIONS[1])
 
-    # Context RAG
+    # RAG context
     context_parts = []
     for i, doc in enumerate(context_docs[:max_context_docs], 1):
         meta    = doc.get("metadata", {})
@@ -273,7 +273,7 @@ Generate a unique phishing email following the instructions above. Output ONLY t
     return {"system": system, "user": user}
 
 
-# ── API publică ───────────────────────────────────────────────────────────
+# ── Public API ────────────────────────────────────────────────────────────
 
 def build_prompt(
     round_num: int,
@@ -285,13 +285,13 @@ def build_prompt(
     max_context_docs: int = 2,
 ) -> dict[str, str]:
     """
-    Construiește promptul complet pentru generare.
+    Builds the full generation prompt.
 
-    Folosește prompt_templates.py original dacă e disponibil,
-    altfel fallback la implementarea built-in.
+    Uses the original prompt_templates.py if available,
+    otherwise falls back to the built-in implementation.
 
     Returns:
-        dict cu cheile 'system' și 'user'
+        dict with keys 'system' and 'user'
     """
     if _templates_loaded:
         return _original_build_prompt(

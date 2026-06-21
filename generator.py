@@ -1,8 +1,8 @@
 """
 generator.py
 
-Generează emailuri phishing prin orice endpoint compatibil OpenAI.
-Suportă orice model înregistrat în GENERATOR_MODELS din config.py.
+Generates phishing emails via any OpenAI-compatible endpoint.
+Supports any model registered in GENERATOR_MODELS in config.py.
 """
 
 import os
@@ -42,7 +42,7 @@ def _call_api(url: str, headers: dict, payload: dict, timeout: int = REQUEST_TIM
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 wait = 2 ** attempt
-                print(f"  [rate limit] aștept {wait}s...")
+                print(f"  [rate limit] waiting {wait}s...")
                 time.sleep(wait)
             elif attempt == MAX_RETRIES:
                 raise
@@ -52,7 +52,7 @@ def _call_api(url: str, headers: dict, payload: dict, timeout: int = REQUEST_TIM
             if attempt == MAX_RETRIES:
                 raise
             time.sleep(REQUEST_DELAY * attempt)
-    raise RuntimeError("Toate retry-urile au eșuat")
+    raise RuntimeError("All retries exhausted")
 
 
 def generate_email(
@@ -66,26 +66,26 @@ def generate_email(
     api_key:       Optional[str] = None,
 ) -> GenerationResult:
     """
-    Generează un singur email phishing via orice model din GENERATOR_MODELS.
+    Generates a single phishing email via any model from GENERATOR_MODELS.
 
     Args:
-        model_name: cheie din GENERATOR_MODELS (ex. "deepseek-v4-flash", "vllm-local")
-        api_key:    override manual al cheii; altfel citat din variabila de env configurată
+        model_name: key from GENERATOR_MODELS (e.g. "deepseek-v4-flash", "vllm-local")
+        api_key:    manual key override; otherwise read from the configured env variable
     """
     if model_name not in GENERATOR_MODELS:
         raise ValueError(
-            f"Model necunoscut: '{model_name}'. "
-            f"Disponibile: {list(GENERATOR_MODELS)}"
+            f"Unknown model: '{model_name}'. "
+            f"Available: {list(GENERATOR_MODELS)}"
         )
 
     cfg      = GENERATOR_MODELS[model_name]
     url      = cfg["api_url"]
     key      = api_key or os.environ.get(cfg["api_key_env"], "")
-    model_id = cfg.get("model_id", model_name)  # model_id pentru vLLM local
+    model_id = cfg.get("model_id", model_name)  # model_id for local vLLM (may differ from CLI key)
 
     if not key and "localhost" not in url:
         raise EnvironmentError(
-            f"Lipsește {cfg['api_key_env']} din environment variables"
+            f"Missing {cfg['api_key_env']} from environment variables"
         )
 
     headers = {

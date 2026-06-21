@@ -1,12 +1,12 @@
 """
 experiments/fraud_stage_analysis.py
 
-Analiză per fraud_stage:
-  1. Reward heuristic (base vs GRPO) per stage — din grpo_eval.json + dataset.jsonl
-  2. FNR per stage — reantrenare XLM-RoBERTa pe train.jsonl, test pe fiecare stage separat
-  3. FNR adversarial per stage — test cu emailuri GRPO din adv_grpo_emails.json
+Per fraud_stage analysis:
+  1. Heuristic reward (base vs. GRPO) per stage — from grpo_eval.json + dataset.jsonl
+  2. FNR per stage — retrain XLM-RoBERTa on train.jsonl, test per stage separately
+  3. Adversarial FNR per stage — test with GRPO emails from adv_grpo_emails.json
 
-Rulare:
+Usage:
     python experiments/fraud_stage_analysis.py
     python experiments/fraud_stage_analysis.py --skip-clf
 """
@@ -37,10 +37,10 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 STAGES = ["authority", "urgency"]
 
 
-# ── 1. Reward per stage (heuristic + grpo_eval) ───────────────────────────────
+# ── 1. Reward per stage (heuristic + grpo_eval) ──────────────────────────────
 
 def analyze_reward_per_stage() -> dict:
-    """Reward heuristic din dataset.jsonl + base/GRPO din grpo_eval.json."""
+    """Heuristic reward from dataset.jsonl + base/GRPO from grpo_eval.json."""
     data = [json.loads(l) for l in open(DATASET_PATH, encoding="utf-8") if l.strip()]
     phishing = [d for d in data if d["label"] == 1]
 
@@ -68,7 +68,7 @@ def analyze_reward_per_stage() -> dict:
             "avg_words":   round(float(np.mean([len(t.split()) for t in texts])), 1),
         }
 
-    # GRPO eval per stage
+    # GRPO reward per stage
     grpo_by_stage = defaultdict(lambda: {"base": [], "grpo": []})
     if GRPO_EVAL.exists():
         with open(GRPO_EVAL, encoding="utf-8") as f:
@@ -94,7 +94,7 @@ def analyze_reward_per_stage() -> dict:
     return heuristic, grpo_impact
 
 
-# ── 2. FNR per stage — clasificator ───────────────────────────────────────────
+# ── 2. FNR per stage — classifier ────────────────────────────────────────────
 
 def load_jsonl(path):
     with open(path, encoding="utf-8") as f:
@@ -102,7 +102,7 @@ def load_jsonl(path):
 
 
 def train_classifier(train_texts, train_labels, seed=42):
-    """Fine-tunează XLM-RoBERTa pe train set."""
+    """Fine-tunes XLM-RoBERTa on the training set."""
     import torch
     from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
                                TrainingArguments, Trainer)
@@ -123,7 +123,7 @@ def train_classifier(train_texts, train_labels, seed=42):
             return {"input_ids": self.ids[i], "attention_mask": self.mask[i],
                     "labels": self.labels[i]}
 
-    # Stratified sampling 50/50 up to 3000
+    # Stratified 50/50 sampling up to 3 000
     by_lbl = defaultdict(list)
     for i, l in enumerate(train_labels):
         by_lbl[l].append(i)
@@ -136,7 +136,7 @@ def train_classifier(train_texts, train_labels, seed=42):
     train_texts  = [train_texts[i]  for i in chosen]
     train_labels = [train_labels[i] for i in chosen]
 
-    print(f"[stage] Antrenez clasificator pe {len(train_texts)} exemple...")
+    print(f"[stage] Training classifier on {len(train_texts)} examples...")
     train_ds = EmailDS(train_texts, train_labels)
 
     model = AutoModelForSequenceClassification.from_pretrained(CLASSIFIER_HF, num_labels=2)
@@ -155,12 +155,12 @@ def train_classifier(train_texts, train_labels, seed=42):
     )
     trainer = Trainer(model=model, args=args, train_dataset=train_ds)
     trainer.train()
-    print("[stage] Antrenare completă.")
+    print("[stage] Training complete.")
     return trainer, tok
 
 
 def eval_fnr_per_stage(trainer, tok, phishing_by_stage: dict, label: str) -> dict:
-    """Evaluează FNR pentru fiecare fraud_stage."""
+    """Evaluates FNR for each fraud_stage."""
     import torch
     from torch.utils.data import Dataset
     from sklearn.metrics import recall_score, f1_score
@@ -197,7 +197,7 @@ def eval_fnr_per_stage(trainer, tok, phishing_by_stage: dict, label: str) -> dic
     return results
 
 
-# ── 3. Plot ────────────────────────────────────────────────────────────────────
+# ── 3. Plot ──────────────────────────────────────────────────────────────────
 
 def plot_results(heuristic: dict, grpo_impact: dict,
                  fnr_baseline: dict, fnr_adversarial: dict, out_path: Path):
@@ -210,7 +210,7 @@ def plot_results(heuristic: dict, grpo_impact: dict,
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 6))
 
-    # Panel 1: Reward per stage (heuristic din dataset)
+    # Panel 1: Heuristic reward per stage (from dataset)
     ax = axes[0]
     rewards = [heuristic.get(s, {}).get("avg_reward", 0) for s in stages]
     bars = ax.bar(stages, rewards, color=["#1976D2", "#E53935"], alpha=0.85)
@@ -221,7 +221,7 @@ def plot_results(heuristic: dict, grpo_impact: dict,
         ax.annotate(f"{v:.4f}", (bar.get_x() + bar.get_width()/2, v),
                     textcoords="offset points", xytext=(0, 4), ha="center", fontsize=11)
 
-    # Panel 2: Base vs GRPO reward per stage
+    # Panel 2: Base vs. GRPO reward per stage
     ax = axes[1]
     x = np.arange(len(stages))
     base_vals = [grpo_impact.get(s, {}).get("base", 0) for s in stages]
@@ -234,19 +234,19 @@ def plot_results(heuristic: dict, grpo_impact: dict,
         ax.annotate(f"Δ{d:+.4f}", (x[i], max(base_vals[i], grpo_vals[i])),
                     textcoords="offset points", xytext=(0, 6),
                     ha="center", fontsize=10, color="green" if d > 0 else "red")
-    ax.set_title("Impact GRPO per fraud stage\n(reward API, 20 prompturi)", fontsize=11, fontweight="bold")
+    ax.set_title("GRPO impact per fraud stage\n(API reward, 20 prompts)", fontsize=11, fontweight="bold")
     ax.set_ylim(0, 0.8)
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
 
-    # Panel 3: FNR per stage (baseline vs adversarial)
+    # Panel 3: FNR per stage (baseline vs. adversarial)
     ax = axes[2]
     fnr_base = [fnr_baseline.get(s, {}).get("fnr", 0) for s in stages]
     fnr_adv  = [fnr_adversarial.get(s, {}).get("fnr", 0) for s in stages]
-    ax.bar(x - w/2, fnr_base, w, label="Test baseline (phishing baza)",   color="#2196F3", alpha=0.85)
-    ax.bar(x + w/2, fnr_adv,  w, label="Test adversarial (phishing GRPO)", color="#FF5722", alpha=0.85)
+    ax.bar(x - w/2, fnr_base, w, label="Baseline test (base phishing)",   color="#2196F3", alpha=0.85)
+    ax.bar(x + w/2, fnr_adv,  w, label="Adversarial test (GRPO phishing)", color="#FF5722", alpha=0.85)
     ax.set_xticks(x); ax.set_xticklabels(stages)
-    ax.set_title("FNR per fraud stage\n(clasificator XLM-RoBERTa)", fontsize=11, fontweight="bold")
+    ax.set_title("FNR per fraud stage\n(XLM-RoBERTa classifier)", fontsize=11, fontweight="bold")
     ax.set_ylim(0, 1.05)
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
@@ -256,11 +256,11 @@ def plot_results(heuristic: dict, grpo_impact: dict,
         ax.annotate(f"{a:.3f}", (x[i]+w/2, a), textcoords="offset points",
                     xytext=(0, 4), ha="center", fontsize=10)
 
-    fig.suptitle("Analiză per Fraud Stage: reward, impact GRPO și dificultate detecție",
+    fig.suptitle("Per Fraud Stage Analysis: reward, GRPO impact and detection difficulty",
                  fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[stage] Plot salvat: {out_path}")
+    print(f"[stage] Plot saved: {out_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -268,14 +268,14 @@ def plot_results(heuristic: dict, grpo_impact: dict,
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-clf", action="store_true",
-                        help="Sare reantrenarea clasificatorului")
+                        help="Skip classifier retraining")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     random.seed(args.seed)
 
     # ── 1. Reward per stage ───────────────────────────────────────────────
-    print("[stage] Calculez reward per fraud stage...")
+    print("[stage] Computing reward per fraud stage...")
     heuristic, grpo_impact = analyze_reward_per_stage()
 
     print("\n[stage] Reward heuristic (dataset phishing):")
@@ -293,14 +293,14 @@ def main():
     fnr_adversarial = {}
 
     if not args.skip_clf:
-        print("\n[stage] Încarc train/test data...")
+        print("\n[stage] Loading train/test data...")
         train_data = load_jsonl(TRAIN_JSONL)
         test_data  = load_jsonl(TEST_JSONL)
 
         train_texts  = [d["email_text"] for d in train_data]
         train_labels = [d["label"]      for d in train_data]
 
-        # Phishing din test.jsonl grupat pe stage
+        # Phishing from test.jsonl grouped by stage
         test_phishing_by_stage = defaultdict(list)
         for d in test_data:
             if d["label"] == 1:
@@ -311,11 +311,10 @@ def main():
         print(f"[stage] Test phishing per stage: "
               + ", ".join(f"{s}={len(v)}" for s, v in test_phishing_by_stage.items()))
 
-        # GRPO emails din adv_grpo_emails.json — reconstruim stage labels
-        # generare adversarial: stages cycle ["initial_contact","trust_building",
-        # "urgency_pressure","credential_harvest","payment_extraction"] → i%5
-        # Mapăm la dataset stages: urgency_pressure/payment_extraction → urgency
-        # restul → authority
+        # GRPO emails from adv_grpo_emails.json — reconstruct stage labels
+        # adversarial generation cycles through stages in order → i % 5
+        # Map to dataset stages: urgency_pressure/payment_extraction → urgency
+        # remaining stages → authority
         adv_by_stage = defaultdict(list)
         if ADV_EMAILS.exists():
             with open(ADV_EMAILS, encoding="utf-8") as f:
@@ -338,20 +337,20 @@ def main():
 
         trainer, tok = train_classifier(train_texts, train_labels, seed=args.seed)
 
-        print("\n[stage] FNR baseline (phishing standard din test.jsonl):")
+        print("\n[stage] FNR baseline (standard phishing from test.jsonl):")
         fnr_baseline = eval_fnr_per_stage(trainer, tok, test_phishing_by_stage, "baseline")
 
         if adv_by_stage:
-            print("\n[stage] FNR adversarial (phishing GRPO):")
+            print("\n[stage] FNR adversarial (GRPO phishing):")
             fnr_adversarial = eval_fnr_per_stage(trainer, tok, dict(adv_by_stage), "adversarial")
 
         import torch
         del trainer
         torch.cuda.empty_cache()
 
-    # ── 3. Print tabel ────────────────────────────────────────────────────
+    # ── 3. Print table ────────────────────────────────────────────────────
     print("\n" + "="*70)
-    print("ANALIZĂ PER FRAUD STAGE")
+    print("PER FRAUD STAGE ANALYSIS")
     print("="*70)
     print(f"\n{'Stage':<14} {'N':>5} {'H.Reward':>9} {'Base R':>8} {'GRPO R':>8} {'Δ':>7} "
           f"{'FNR base':>10} {'FNR adv':>9}")
@@ -370,7 +369,7 @@ def main():
     plot_results(heuristic, grpo_impact, fnr_baseline, fnr_adversarial,
                  OUT_DIR / "fraud_stage_analysis.png")
 
-    # ── 5. Salvare JSON ───────────────────────────────────────────────────
+    # ── 5. Save JSON ──────────────────────────────────────────────────────
     output = {
         "heuristic_reward": heuristic,
         "grpo_impact":      grpo_impact,
@@ -380,7 +379,7 @@ def main():
     out_json = OUT_DIR / "fraud_stage_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"\n[stage] Rezultate salvate: {out_json}")
+    print(f"\n[stage] Results saved: {out_json}")
 
 
 if __name__ == "__main__":

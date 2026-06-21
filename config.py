@@ -1,6 +1,6 @@
 """
-config.py — toate setările pipeline-ului într-un singur loc.
-Modifică DOAR acest fișier când vrei să schimbi modele, praguri sau volume.
+config.py — all pipeline settings in one place.
+Only modify THIS file to change models, thresholds, or volumes.
 """
 
 from pathlib import Path
@@ -18,9 +18,9 @@ DATASET_PATH    = OUTPUT_DIR / "dataset.jsonl"
 AUDIT_LOG_PATH  = OUTPUT_DIR / "audit_log.jsonl"
 CHECKPOINT_PATH = OUTPUT_DIR / "checkpoint.json"
 
-# ── Modele generator ───────────────────────────────────────────────────────
-# Orice endpoint compatibil OpenAI poate fi adăugat.
-# Cheie = numele din --model CLI arg.
+# ── Generator models ───────────────────────────────────────────────────────
+# Any OpenAI-compatible endpoint can be added.
+# Key = name used in the --model CLI arg.
 GENERATOR_MODELS: dict[str, dict] = {
     "deepseek-v4-flash": {
         "api_url":     "https://api.deepseek.com/v1/chat/completions",
@@ -38,8 +38,8 @@ GENERATOR_MODELS: dict[str, dict] = {
         "api_url":     "https://api.together.xyz/v1/chat/completions",
         "api_key_env": "TOGETHER_API_KEY",
     },
-    # model servit local prin vLLM (ex. Qwen2.5-7B pe 4090)
-    # model_id = numele real trimis în API payload (diferit de cheia CLI)
+    # model served locally via vLLM (e.g. Qwen2.5-7B on RTX 4090)
+    # model_id = actual name sent in API payload (may differ from the CLI key)
     "vllm-local": {
         "api_url":     "http://localhost:8000/v1/chat/completions",
         "api_key_env": "VLLM_API_KEY",
@@ -50,25 +50,25 @@ GENERATOR_MODELS: dict[str, dict] = {
 DEFAULT_GENERATOR_MODEL = "deepseek-v4-flash"
 
 # ── Evaluator ─────────────────────────────────────────────────────────────
-# "api"  = DeepSeek V4-Pro thinking mode (necesită DEEPSEEK_API_KEY)
-# "vllm" = model OSS servit local prin vLLM (complet reproductibil, recomandat)
+# "api"  = DeepSeek V4-Pro thinking mode (requires DEEPSEEK_API_KEY)
+# "vllm" = OSS model served locally via vLLM (fully reproducible, recommended)
 EVALUATOR_BACKEND = "api"
 
-# Backend API (DeepSeek)
-EVALUATOR_MODEL   = "deepseek-v4-flash"   # v4-pro era prea lent (thinking mode); flash e 5-10x mai rapid
+# API backend (DeepSeek)
+EVALUATOR_MODEL   = "deepseek-v4-flash"   # v4-pro was too slow (thinking mode); flash is 5–10× faster
 EVALUATOR_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# Backend vLLM (OSS, recomandat pentru reproductibilitate)
-# Pe RTX 4090 (24GB): Qwen2.5-7B-Instruct (FP16 ~14GB) sau
-#   Qwen2.5-14B-Instruct-AWQ (INT4 ~8GB) — lasă memorie pentru GRPO
-# Pornire: vllm serve Qwen/Qwen2.5-7B-Instruct --port 8001 --dtype bfloat16
+# vLLM backend (OSS, recommended for reproducibility)
+# On RTX 4090 (24 GB): Qwen2.5-7B-Instruct (FP16 ~14 GB) or
+#   Qwen2.5-14B-Instruct-AWQ (INT4 ~8 GB) — leaves room for GRPO
+# Start: vllm serve Qwen/Qwen2.5-7B-Instruct --port 8001 --dtype bfloat16
 VLLM_EVALUATOR_URL   = "http://localhost:8001/v1/chat/completions"
 VLLM_EVALUATOR_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
-# ── Embedder RAG ───────────────────────────────────────────────────────────
+# ── RAG embedder ───────────────────────────────────────────────────────────
 # (model_hf_name, embedding_dim)
-# Comparate pe MTEB Retrieval — qwen3 și nemotron sunt top performers
-# Atenție: nemotron (NV-Embed-v2, ~14GB FP16) concurează cu vLLM pe VRAM 4090
+# Compared on MTEB Retrieval — qwen3 and nemotron are top performers
+# Note: nemotron (NV-Embed-v2, ~14 GB FP16) competes with vLLM for VRAM on the 4090
 EMBEDDER_OPTIONS: dict[str, tuple[str, int]] = {
     "qwen3":    ("Qwen/Qwen3-Embedding-0.6B",               1024),
     "nemotron": ("nvidia/NV-Embed-v2",                      4096),
@@ -79,17 +79,17 @@ DEFAULT_EMBEDDER = "qwen3"
 EMBEDDER_MODEL = EMBEDDER_OPTIONS[DEFAULT_EMBEDDER][0]
 EMBEDDING_DIM  = EMBEDDER_OPTIONS[DEFAULT_EMBEDDER][1]
 
-# ── Parametri generare ─────────────────────────────────────────────────────
+# ── Generation parameters ──────────────────────────────────────────────────
 LOCALES        = ["en-US", "ro-RO", "de-DE", "fr-FR", "it-IT"]
 MAX_ROUNDS     = 4
 TEMPERATURE    = 0.85
 MAX_TOKENS_GEN = 1100
 
-# ── Parametri self-correction ──────────────────────────────────────────────
+# ── Self-correction parameters ─────────────────────────────────────────────
 MAX_CORRECTION_ITERS = 3
 SCORE_THRESHOLD      = 6.0
 
-# ── Parametri volum ────────────────────────────────────────────────────────
+# ── Volume parameters ──────────────────────────────────────────────────────
 TARGET_PHISHING = 2000
 TARGET_HAM      = 2000
 
@@ -103,5 +103,5 @@ FAISS_INDEX_PATH = OUTPUT_DIR / "faiss_index"
 TOP_K_DOCS       = 2
 
 # ── Deduplication ──────────────────────────────────────────────────────────
-# Hash SHA1 pe primele N caractere pentru near-dedup în checkpoint
+# SHA1 hash of the first N characters for near-dedup in checkpoint
 DEDUP_HASH_CHARS = 150

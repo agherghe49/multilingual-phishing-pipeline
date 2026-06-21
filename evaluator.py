@@ -1,12 +1,12 @@
 """
 evaluator.py
 
-Self-correction loop cu două backend-uri:
-  "api"  — DeepSeek V4-Pro thinking mode (cloud, necesită DEEPSEEK_API_KEY)
-  "vllm" — model OSS servit local prin vLLM (reproductibil, recomandat)
+Self-correction loop with two backends:
+  "api"  — DeepSeek V4-Pro thinking mode (cloud, requires DEEPSEEK_API_KEY)
+  "vllm" — OSS model served locally via vLLM (reproducible, recommended)
 
-Schimbă EVALUATOR_BACKEND în config.py pentru a alege backend-ul.
-Pe RTX 4090: pornește vLLM cu
+Set EVALUATOR_BACKEND in config.py to choose the backend.
+On RTX 4090: start vLLM with
   vllm serve Qwen/Qwen2.5-7B-Instruct --port 8001 --dtype bfloat16
 """
 
@@ -92,15 +92,15 @@ def _parse_scores(raw: str) -> dict:
     end   = raw.rfind("}") + 1
     if start == -1 or end == 0:
         raise ValueError(
-            f"Nu am găsit JSON în răspuns.\n"
-            f"  Lungime răspuns: {len(raw)} chars\n"
-            f"  Primele 500 chars: {raw[:500]!r}"
+            f"No JSON found in response.\n"
+            f"  Response length: {len(raw)} chars\n"
+            f"  First 500 chars: {raw[:500]!r}"
         )
     try:
         return json.loads(raw[start:end])
     except json.JSONDecodeError as e:
         raise ValueError(
-            f"JSON invalid în răspuns: {e}\n"
+            f"Invalid JSON in response: {e}\n"
             f"  Fragment: {raw[start:end][:300]!r}"
         )
 
@@ -118,18 +118,18 @@ def _post_with_retry(url: str, headers: dict, payload: dict) -> dict:
             elif attempt == MAX_RETRIES:
                 raise
         except Exception as e:
-            print(f"  [evaluator eroare rețea] attempt {attempt}/{MAX_RETRIES} — {type(e).__name__}: {e}")
+            print(f"  [evaluator network error] attempt {attempt}/{MAX_RETRIES} — {type(e).__name__}: {e}")
             if attempt == MAX_RETRIES:
                 raise
             time.sleep(REQUEST_DELAY * attempt)
-    raise RuntimeError("Toate retry-urile evaluatorului au eșuat")
+    raise RuntimeError("All evaluator retries exhausted")
 
 
 def _call_api_backend(email_text: str, locale: str, fraud_stage: str) -> tuple[str, str]:
-    """DeepSeek V4-Pro cu thinking mode — returnează (response_text, thinking_text)."""
+    """DeepSeek V4-Pro with thinking mode — returns (response_text, thinking_text)."""
     api_key = os.environ.get("DEEPSEEK_API_KEY", "")
     if not api_key:
-        raise EnvironmentError("Lipsește DEEPSEEK_API_KEY")
+        raise EnvironmentError("Missing DEEPSEEK_API_KEY")
 
     payload = {
         "model":       EVALUATOR_MODEL,
@@ -148,13 +148,13 @@ def _call_api_backend(email_text: str, locale: str, fraud_stage: str) -> tuple[s
     data    = _post_with_retry(EVALUATOR_API_URL, headers, payload)
     choice  = data["choices"][0]["message"]
     text    = choice.get("content", "").strip()
-    thinking = choice.get("reasoning_content", "")   # câmp specific DeepSeek thinking mode
+    thinking = choice.get("reasoning_content", "")   # DeepSeek-specific field for thinking mode
     time.sleep(REQUEST_DELAY)
     return text, thinking
 
 
 def _call_vllm_backend(email_text: str, locale: str, fraud_stage: str) -> tuple[str, str]:
-    """Model OSS servit local prin vLLM — thinking_text rămâne gol."""
+    """OSS model served locally via vLLM — thinking_text remains empty."""
     api_key = os.environ.get("VLLM_API_KEY", "local")
 
     payload = {
@@ -192,7 +192,7 @@ def evaluate_email(
     try:
         raw_text, thinking = _call_evaluator(email_text, locale, fraud_stage)
         if not raw_text:
-            raise ValueError("Răspuns gol de la evaluator (empty content)")
+            raise ValueError("Empty response from evaluator (empty content)")
         parsed = _parse_scores(raw_text)
 
         u = float(parsed.get("urgency_score",   0))
@@ -260,7 +260,7 @@ def run_correction_loop(
         })
 
         if result.error:
-            print(f"  [iter {i}] eroare evaluator: {result.error}")
+            print(f"  [iter {i}] evaluator error: {result.error}")
             break
 
         print(

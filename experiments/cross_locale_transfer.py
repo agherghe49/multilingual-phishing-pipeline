@@ -1,20 +1,20 @@
 """
 experiments/cross_locale_transfer.py
 
-Transferabilitate cross-locale: antrenăm clasificatorul pe o singură limbă
-și testăm pe toate celelalte.
+Cross-locale transferability: train the classifier on a single language
+and test on all others.
 
-Scenarii:
-  1. Per-locale: antrenare pe locale X (phishing+ham), test pe toate 5 locale
-  2. En-only: antrenare doar pe en-US, test multilingv
-  3. Multilingual: antrenare pe toate 5 locale (baseline de referință)
+Scenarios:
+  1. Per-locale: train on locale X (phishing+ham), test on all 5 locales
+  2. En-only: train on en-US only, test multilingually
+  3. Multilingual: train on all 5 locales (reference baseline)
 
-Întrebarea: Sunt datele multilingve necesare? Generalizează un model
-antrenat pe engleză la phishing românesc, german etc.?
+Key question: is multilingual data necessary? Does a model trained on
+English generalize to Romanian, German, etc. phishing?
 
-Rulare:
+Usage:
     python experiments/cross_locale_transfer.py
-    python experiments/cross_locale_transfer.py --quick  # fără per-locale complet
+    python experiments/cross_locale_transfer.py --quick  # skip full per-locale matrix
 """
 
 import sys
@@ -38,7 +38,7 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 LOCALES = ["ro-RO", "en-US", "de-DE", "fr-FR", "it-IT"]
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# ── Data loading ─────────────────────────────────────────────────────────────
 
 def load_jsonl(path):
     with open(path, encoding="utf-8") as f:
@@ -53,11 +53,11 @@ def filter_by_locales(data: list[dict], locales: list[str]) -> list[dict]:
     return [d for d in data if d.get("locale") in locales]
 
 
-# ── Clasificator ──────────────────────────────────────────────────────────────
+# ── Classifier ────────────────────────────────────────────────────────────────
 
 def train_classifier(train_texts, train_labels, tag: str, seed: int = 42,
                      max_per_label: int = 1500):
-    """Fine-tunează XLM-RoBERTa. Returnează (trainer, tokenizer)."""
+    """Fine-tunes XLM-RoBERTa. Returns (trainer, tokenizer)."""
     import gc
     import torch
     from transformers import (AutoTokenizer, AutoModelForSequenceClassification,
@@ -67,7 +67,7 @@ def train_classifier(train_texts, train_labels, tag: str, seed: int = 42,
     random.seed(seed)
     gc.collect(); torch.cuda.empty_cache()
 
-    # Stratified sampling
+    # Stratified sampling by label
     by_lbl = defaultdict(list)
     for i, l in enumerate(train_labels):
         by_lbl[l].append(i)
@@ -80,7 +80,7 @@ def train_classifier(train_texts, train_labels, tag: str, seed: int = 42,
     t_texts  = [train_texts[i]  for i in chosen]
     t_labels = [train_labels[i] for i in chosen]
 
-    print(f"  [clf-{tag}] antrenare pe {len(t_texts)} exemple "
+    print(f"  [clf-{tag}] training on {len(t_texts)} examples "
           f"({sum(t_labels)} phishing + {len(t_labels)-sum(t_labels)} ham)")
 
     tok = AutoTokenizer.from_pretrained(CLASSIFIER_HF)
@@ -120,7 +120,7 @@ def train_classifier(train_texts, train_labels, tag: str, seed: int = 42,
 
 
 def eval_on_locale(trainer, tok, EmailDS, test_data, locale: str) -> dict:
-    """Evaluează clasificatorul pe test data dintr-un singur locale."""
+    """Evaluates the classifier on test data from a single locale."""
     import torch
     from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
@@ -155,7 +155,7 @@ def eval_on_locale(trainer, tok, EmailDS, test_data, locale: str) -> dict:
 # ── Plot ──────────────────────────────────────────────────────────────────────
 
 def plot_heatmap(matrix: dict, metric: str, title: str, out_path: Path):
-    """matrix[train_locale][test_locale] = val"""
+    """matrix[train_locale][test_locale] = metric value"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -186,11 +186,11 @@ def plot_heatmap(matrix: dict, metric: str, title: str, out_path: Path):
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[xlocale] Heatmap salvat: {out_path}")
+    print(f"[xlocale] Heatmap saved: {out_path}")
 
 
 def plot_summary(results: dict, out_path: Path):
-    """Bara comparativă: F1 mediu per scenariu de antrenare."""
+    """Bar chart: average F1 per training scenario."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -207,12 +207,12 @@ def plot_summary(results: dict, out_path: Path):
     x = np.arange(len(scenarios))
     w = 0.35
     fig, ax = plt.subplots(figsize=(12, 6))
-    bars1 = ax.bar(x - w/2, avg_f1,  w, label="F1-phishing mediu",  color="#2196F3", alpha=0.85)
-    bars2 = ax.bar(x + w/2, avg_fnr, w, label="FNR mediu",          color="#F44336", alpha=0.85)
+    bars1 = ax.bar(x - w/2, avg_f1,  w, label="Avg F1-phishing",  color="#2196F3", alpha=0.85)
+    bars2 = ax.bar(x + w/2, avg_fnr, w, label="Avg FNR",          color="#F44336", alpha=0.85)
     ax.set_xticks(x)
     ax.set_xticklabels([s.replace(" ", "\n") for s in scenarios], fontsize=9)
     ax.set_ylim(0, 1.1)
-    ax.set_title("Transferabilitate cross-locale: F1 și FNR mediu per scenariu",
+    ax.set_title("Cross-locale transferability: average F1 and FNR per scenario",
                  fontsize=13, fontweight="bold")
     ax.legend(fontsize=11)
     ax.grid(axis="y", alpha=0.3)
@@ -221,7 +221,7 @@ def plot_summary(results: dict, out_path: Path):
                     textcoords="offset points", xytext=(0, 4), ha="center", fontsize=9)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[xlocale] Summary plot salvat: {out_path}")
+    print(f"[xlocale] Summary plot saved: {out_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -229,14 +229,14 @@ def plot_summary(results: dict, out_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true",
-                        help="Sare evaluarea per-locale completă (doar en-only vs. multilingual)")
+                        help="Skip full per-locale evaluation (en-only vs. multilingual only)")
     parser.add_argument("--seed",  type=int, default=42)
     args = parser.parse_args()
 
     import gc
     import torch
 
-    print("[xlocale] Încarc train/test data...")
+    print("[xlocale] Loading train/test data...")
     train_data = load_jsonl(TRAIN_JSONL)
     test_data  = load_jsonl(TEST_JSONL)
     print(f"[xlocale] Train: {len(train_data)} | Test: {len(test_data)}")
@@ -246,9 +246,9 @@ def main():
         print(f"  Test {loc}: {n}")
 
     # ──────────────────────────────────────────────────────────────────────
-    # SCENARIUL 1: En-US only
+    # SCENARIO 1: En-US only
     # ──────────────────────────────────────────────────────────────────────
-    print("\n[xlocale] === SCENARIU 1: Antrenare en-US only ===")
+    print("\n[xlocale] === SCENARIO 1: Training on en-US only ===")
     en_train = filter_by_locale(train_data, "en-US")
     en_texts  = [d["email_text"] for d in en_train]
     en_labels = [d["label"]      for d in en_train]
@@ -269,9 +269,9 @@ def main():
     gc.collect(); torch.cuda.empty_cache()
 
     # ──────────────────────────────────────────────────────────────────────
-    # SCENARIUL 2: Multilingual (toate 5 locale) — referință
+    # SCENARIO 2: Multilingual (all 5 locales) — reference baseline
     # ──────────────────────────────────────────────────────────────────────
-    print("\n[xlocale] === SCENARIU 2: Antrenare multilingual (toate locale) ===")
+    print("\n[xlocale] === SCENARIO 2: Training multilingual (all locales) ===")
     all_texts  = [d["email_text"] for d in train_data]
     all_labels = [d["label"]      for d in train_data]
 
@@ -290,14 +290,14 @@ def main():
     gc.collect(); torch.cuda.empty_cache()
 
     # ──────────────────────────────────────────────────────────────────────
-    # SCENARIUL 3: Per-locale (skip dacă --quick)
+    # SCENARIO 3: Per-locale (skip if --quick)
     # ──────────────────────────────────────────────────────────────────────
     per_locale_matrix = {}  # matrix[train_locale][test_locale] = metrics
 
     if not args.quick:
-        print("\n[xlocale] === SCENARIU 3: Per-locale cross-transfer matrix ===")
+        print("\n[xlocale] === SCENARIO 3: Per-locale cross-transfer matrix ===")
         for train_loc in LOCALES:
-            print(f"\n[xlocale] Antrenez pe {train_loc}...")
+            print(f"\n[xlocale] Training on {train_loc}...")
             loc_train = filter_by_locale(train_data, train_loc)
             loc_texts  = [d["email_text"] for d in loc_train]
             loc_labels = [d["label"]      for d in loc_train]
@@ -317,9 +317,9 @@ def main():
             del trainer_loc
             gc.collect(); torch.cuda.empty_cache()
 
-    # ── Print tabel comparativ ────────────────────────────────────────────
+    # ── Print comparison table ────────────────────────────────────────────
     print("\n" + "="*70)
-    print("TRANSFERABILITATE CROSS-LOCALE — Rezumat")
+    print("CROSS-LOCALE TRANSFERABILITY — Summary")
     print("="*70)
     print(f"{'Test locale':<10} {'en-US F1':>10} {'en-US FNR':>11} "
           f"{'Multi F1':>10} {'Multi FNR':>11}")
@@ -335,9 +335,9 @@ def main():
 
     en_avg_f1  = np.mean([v.get("f1_phishing",0) for v in en_only_results.values()])
     ml_avg_f1  = np.mean([v.get("f1_phishing",0) for v in multi_results.values()])
-    print(f"\nF1 mediu en-only:     {en_avg_f1:.4f}")
-    print(f"F1 mediu multilingual: {ml_avg_f1:.4f}")
-    print(f"Gap multilingv:        {ml_avg_f1-en_avg_f1:+.4f}")
+    print(f"\nAvg F1 en-only:        {en_avg_f1:.4f}")
+    print(f"Avg F1 multilingual:   {ml_avg_f1:.4f}")
+    print(f"Multilingual gap:      {ml_avg_f1-en_avg_f1:+.4f}")
 
     # ── Plots ─────────────────────────────────────────────────────────────
     summary_results = {
@@ -354,7 +354,7 @@ def main():
                      "FNR: train locale (Y) vs. test locale (X)",
                      OUT_DIR / "cross_locale_fnr_heatmap.png")
 
-    # ── Salvare JSON ──────────────────────────────────────────────────────
+    # ── Save JSON ─────────────────────────────────────────────────────────
     output = {
         "config":           {"classifier": CLASSIFIER_HF, "seed": args.seed},
         "en_only":          en_only_results,
@@ -369,7 +369,7 @@ def main():
     out_json = OUT_DIR / "cross_locale_results.json"
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
-    print(f"\n[xlocale] Rezultate salvate: {out_json}")
+    print(f"\n[xlocale] Results saved: {out_json}")
 
 
 if __name__ == "__main__":

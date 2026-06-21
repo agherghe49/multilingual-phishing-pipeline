@@ -1,16 +1,16 @@
 """
 orchestrator.py
 
-Coordonează pipeline-ul complet de generare:
-  KB → RAG retrieval → prompt → generare → self-correction → checkpoint
+Coordinates the full generation pipeline:
+  KB → RAG retrieval → prompt → generation → self-correction → checkpoint
 
-Exemple de rulare:
-  python orchestrator.py                             # DeepSeek V4-Flash, toate locale
+Usage examples:
+  python orchestrator.py                             # DeepSeek V4-Flash, all locales
   python orchestrator.py --model kimi-k2.6           # ablation: Kimi K2.6
-  python orchestrator.py --model vllm-local          # model OSS local prin vLLM
+  python orchestrator.py --model vllm-local          # local OSS model via vLLM
   python orchestrator.py --model qwen2.5-72b-instruct --embedder nemotron
-  python orchestrator.py --locale ro-RO --limit 100  # test rapid
-  python orchestrator.py --no-resume                 # pornire curată
+  python orchestrator.py --locale ro-RO --limit 100  # quick test
+  python orchestrator.py --no-resume                 # clean start
 """
 
 import os
@@ -47,19 +47,19 @@ def load_knowledge_base() -> list[dict]:
             scenarios.extend(data)
         else:
             scenarios.append(data)
-    print(f"[KB] {len(scenarios)} scenarii încărcate din {KB_DIR}")
+    print(f"[KB] {len(scenarios)} scenarios loaded from {KB_DIR}")
     return scenarios
 
 
 def load_checkpoint() -> tuple[set[str], set[str]]:
-    """Returnează (job_ids_done, content_hashes_done) pentru resume și dedup."""
+    """Returns (job_ids_done, content_hashes_done) for resume and dedup."""
     if not CHECKPOINT_PATH.exists():
         return set(), set()
     with open(CHECKPOINT_PATH, "r") as f:
         data = json.load(f)
     if isinstance(data, dict):
         return set(data.get("done", [])), set(data.get("hashes", []))
-    # format vechi (lista simplă)
+    # legacy format (plain list)
     return set(data), set()
 
 
@@ -82,7 +82,7 @@ def append_jsonl(path: Path, record: dict) -> None:
 
 
 def count_done_per_locale(done: set[str], locales: list[str]) -> dict[str, int]:
-    """Numără job-urile completate per locale din checkpoint."""
+    """Counts completed jobs per locale from checkpoint."""
     counts: dict[str, int] = {loc: 0 for loc in locales}
     for jid in done:
         for loc in locales:
@@ -134,7 +134,7 @@ def _infer_fraud_stage(scenario: dict, round_num: int) -> str:
     return "authority" if round_num <= 2 else "urgency"
 
 
-# ── Pipeline principal ────────────────────────────────────────────────────
+# ── Main pipeline ─────────────────────────────────────────────────────────
 
 def run_pipeline(
     model_name:       str = DEFAULT_GENERATOR_MODEL,
@@ -148,13 +148,13 @@ def run_pipeline(
 
     if model_name not in GENERATOR_MODELS:
         raise ValueError(
-            f"Model necunoscut: '{model_name}'. "
-            f"Disponibile: {list(GENERATOR_MODELS)}"
+            f"Unknown model: '{model_name}'. "
+            f"Available: {list(GENERATOR_MODELS)}"
         )
     if embedder_key not in EMBEDDER_OPTIONS:
         raise ValueError(
-            f"Embedder necunoscut: '{embedder_key}'. "
-            f"Disponibile: {list(EMBEDDER_OPTIONS)}"
+            f"Unknown embedder: '{embedder_key}'. "
+            f"Available: {list(EMBEDDER_OPTIONS)}"
         )
 
     embedder_model, _ = EMBEDDER_OPTIONS[embedder_key]
@@ -176,15 +176,15 @@ def run_pipeline(
     print(f"\n[Pipeline] Generator:  {model_name}")
     print(f"[Pipeline] Evaluator:  {evaluator_tag}")
     print(f"[Pipeline] Embedder:   {embedder_model}")
-    print(f"[Pipeline] Target:     {limit_per_locale or 'nelimitat'} per locale")
-    print(f"[Pipeline] Completate: {done_per_locale}")
-    print(f"[Pipeline] De procesat:{tasks_per_locale}")
-    print(f"[Pipeline] Total:      {len(tasks)} task-uri")
+    print(f"[Pipeline] Target:     {limit_per_locale or 'unlimited'} per locale")
+    print(f"[Pipeline] Completed:  {done_per_locale}")
+    print(f"[Pipeline] Pending:    {tasks_per_locale}")
+    print(f"[Pipeline] Total:      {len(tasks)} tasks")
     print(f"[Pipeline] Output:     {DATASET_PATH}\n")
 
     stats = {"generated": 0, "accepted": 0, "rejected": 0, "dedup": 0, "errors": 0}
 
-    for scenario, locale, round_num in tqdm(tasks, desc="Generare emailuri"):
+    for scenario, locale, round_num in tqdm(tasks, desc="Generating emails"):
         sid         = scenario["id"]
         fraud_stage = _infer_fraud_stage(scenario, round_num)
         topic       = scenario.get("subcategory", "account verification")
@@ -214,13 +214,13 @@ def run_pipeline(
 
         if not gen_result.success:
             stats["errors"] += 1
-            print(f"\n[EROARE generare] {jid}: {gen_result.error}")
+            print(f"\n[ERROR generation] {jid}: {gen_result.error}")
             done.add(jid)
             continue
 
         stats["generated"] += 1
 
-        # Near-dedup: skip dacă am mai generat ceva aproape identic
+        # Near-dedup: skip if an almost identical email was already generated
         chash = content_hash(gen_result.email_text)
         if chash in content_hashes:
             stats["dedup"] += 1
@@ -236,11 +236,11 @@ def run_pipeline(
             round_num     = round_num,
         )
 
-        # Dacă toate iterațiile au avut eroare de evaluator, skip complet
+        # If all iterations failed due to evaluator errors, skip entirely
         all_errors = all(it.get("error") for it in corr_log.iterations)
         if all_errors:
             stats["errors"] += 1
-            print(f"\n[SKIP] {jid}: evaluatorul a eșuat pe toate iterațiile")
+            print(f"\n[SKIP] {jid}: evaluator failed on all iterations")
             done.add(jid)
             continue
 
@@ -286,13 +286,13 @@ def run_pipeline(
     save_checkpoint(done, content_hashes)
 
     print(f"\n{'='*55}")
-    print(f"SUMAR RULARE")
-    print(f"  Generate:  {stats['generated']}")
-    print(f"  Acceptate: {stats['accepted']} "
+    print(f"RUN SUMMARY")
+    print(f"  Generated: {stats['generated']}")
+    print(f"  Accepted:  {stats['accepted']} "
           f"({stats['accepted']/max(stats['generated'],1)*100:.1f}%)")
-    print(f"  Respinse:  {stats['rejected']}")
+    print(f"  Rejected:  {stats['rejected']}")
     print(f"  Dedup:     {stats['dedup']}")
-    print(f"  Erori:     {stats['errors']}")
+    print(f"  Errors:    {stats['errors']}")
     print(f"  Dataset:   {DATASET_PATH}")
     print(f"{'='*55}\n")
 
@@ -301,45 +301,45 @@ def run_pipeline(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Pipeline generare emailuri phishing sintetice"
+        description="Synthetic phishing email generation pipeline"
     )
     parser.add_argument(
         "--model",
         type=str,
         default=DEFAULT_GENERATOR_MODEL,
         choices=list(GENERATOR_MODELS),
-        help=f"Modelul generator (implicit: {DEFAULT_GENERATOR_MODEL})",
+        help=f"Generator model (default: {DEFAULT_GENERATOR_MODEL})",
     )
     parser.add_argument(
         "--embedder",
         type=str,
         default=DEFAULT_EMBEDDER,
         choices=list(EMBEDDER_OPTIONS),
-        help=f"Embedder RAG (implicit: {DEFAULT_EMBEDDER}). "
-             "Atenție: schimbarea embedder-ului forțează rebuild FAISS.",
+        help=f"RAG embedder (default: {DEFAULT_EMBEDDER}). "
+             "Note: changing the embedder forces a FAISS index rebuild.",
     )
     parser.add_argument(
         "--locale",
         type=str,
         default=None,
-        help="Rulează doar pentru un locale (ex: ro-RO)",
+        help="Run for a single locale only (e.g. ro-RO)",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Nr. maxim de task-uri total (util pentru test rapid)",
+        help="Max total tasks (useful for quick tests)",
     )
     parser.add_argument(
         "--limit-per-locale",
         type=int,
         default=None,
-        help="Nr. maxim de task-uri per locale (ex: 2000 → 10000 total pe 5 locale)",
+        help="Max tasks per locale (e.g. 2000 → 10000 total across 5 locales)",
     )
     parser.add_argument(
         "--no-resume",
         action="store_true",
-        help="Ignoră checkpoint-ul și pornește de la zero",
+        help="Ignore checkpoint and start from scratch",
     )
     args = parser.parse_args()
 

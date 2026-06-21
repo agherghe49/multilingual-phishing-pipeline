@@ -1,11 +1,11 @@
 """
 rag/retriever.py
 
-Construiește și interoghează indexul FAISS cu Qwen3-Embed 0.6B.
-Suportă swap ușor de embedder pentru ablation study (modifici config.py).
+Builds and queries the FAISS index with Qwen3-Embed 0.6B.
+Supports easy embedder swapping for ablation studies (edit config.py).
 
-La primul apel construiește indexul din KB_DIR și îl salvează pe disk.
-La apelurile ulterioare îl încarcă direct (rapid).
+On first call: builds the index from KB_DIR and persists it to disk.
+On subsequent calls: loads the existing index directly (fast).
 """
 
 import json
@@ -24,9 +24,9 @@ from config import (
 
 class RAGRetriever:
     """
-    Wrapper FAISS + sentence-transformers pentru retrieval contextual.
+    FAISS + sentence-transformers wrapper for contextual retrieval.
 
-    Utilizare:
+    Usage:
         retriever = RAGRetriever()
         docs = retriever.retrieve("account verification urgency ro-RO", k=2)
     """
@@ -38,7 +38,7 @@ class RAGRetriever:
     ):
         self.model_name = embedder_model or EMBEDDER_MODEL
         self._index     = None
-        self._docs      = []       # lista de documente indexate
+        self._docs      = []       # list of indexed documents
         self._embedder  = None
 
         index_file    = FAISS_INDEX_PATH / "index.faiss"
@@ -52,9 +52,9 @@ class RAGRetriever:
                 meta = json.load(f)
             if meta.get("embedder_model") != self.model_name:
                 print(
-                    f"[RAG] Embedder schimbat "
+                    f"[RAG] Embedder changed "
                     f"({meta.get('embedder_model')} → {self.model_name}), "
-                    f"rebuild index..."
+                    f"rebuilding index..."
                 )
                 needs_rebuild = True
 
@@ -63,26 +63,26 @@ class RAGRetriever:
         else:
             self._load_index(index_file, docs_file)
 
-    # ── Construire index ──────────────────────────────────────────────────
+    # ── Index construction ────────────────────────────────────────────────
 
     def _build_index(self, index_file: Path, docs_file: Path, meta_file: Path) -> None:
-        """Construiește indexul FAISS din toate fișierele JSON din KB_DIR."""
+        """Builds the FAISS index from all JSON files in KB_DIR."""
         try:
             import faiss
             from sentence_transformers import SentenceTransformer
         except ImportError:
             raise ImportError(
-                "Rulează: pip install faiss-cpu sentence-transformers"
+                "Run: pip install faiss-cpu sentence-transformers"
             )
 
-        print(f"[RAG] Construiesc index cu {self.model_name}...")
+        print(f"[RAG] Building index with {self.model_name}...")
         self._embedder = SentenceTransformer(self.model_name)
 
-        # Colectează toate documentele din KB
+        # Collect all documents from the KB
         documents = self._load_kb_documents()
-        print(f"[RAG] {len(documents)} documente de indexat")
+        print(f"[RAG] {len(documents)} documents to index")
 
-        # Embed-uiește documentele
+        # Embed all documents
         texts = [d["content"] for d in documents]
         embeddings = self._embedder.encode(
             texts,
@@ -91,12 +91,12 @@ class RAGRetriever:
             normalize_embeddings=True,  # cosine similarity via inner product
         ).astype(np.float32)
 
-        # Construiește indexul FAISS (inner product = cosine pe vectori normalizați)
+        # Build FAISS index (inner product = cosine on normalized vectors)
         dim   = embeddings.shape[1]
         index = faiss.IndexFlatIP(dim)
         index.add(embeddings)
 
-        # Salvează pe disk
+        # Persist to disk
         FAISS_INDEX_PATH.mkdir(parents=True, exist_ok=True)
         faiss.write_index(index, str(index_file))
         with open(docs_file, "wb") as f:
@@ -106,27 +106,27 @@ class RAGRetriever:
 
         self._index = index
         self._docs  = documents
-        print(f"[RAG] Index salvat în {FAISS_INDEX_PATH} ({dim}D, {len(documents)} docs)")
+        print(f"[RAG] Index saved to {FAISS_INDEX_PATH} ({dim}D, {len(documents)} docs)")
 
     def _load_index(self, index_file: Path, docs_file: Path) -> None:
-        """Încarcă indexul FAISS existent de pe disk."""
+        """Loads an existing FAISS index from disk."""
         try:
             import faiss
         except ImportError:
             raise ImportError(
-                "Rulează: pip install faiss-cpu sentence-transformers"
+                "Run: pip install faiss-cpu sentence-transformers"
             )
 
         self._index = faiss.read_index(str(index_file))
         with open(docs_file, "rb") as f:
             self._docs = pickle.load(f)
-        print(f"[RAG] Index încărcat: {len(self._docs)} documente, {self.model_name}")
-        # embedderul se încarcă lazy la primul retrieve()
+        print(f"[RAG] Index loaded: {len(self._docs)} documents, {self.model_name}")
+        # embedder is loaded lazily on first retrieve()
 
     def _load_kb_documents(self) -> list[dict]:
         """
-        Transformă scenariile JSON din KB în documente indexabile.
-        Fiecare document are: content (text), metadata (dict).
+        Transforms JSON scenarios from KB_DIR into indexable documents.
+        Each document has: content (str), metadata (dict).
         """
         documents = []
         for path in sorted(KB_DIR.glob("*.json")):
@@ -135,7 +135,7 @@ class RAGRetriever:
             items = data if isinstance(data, list) else [data]
 
             for item in items:
-                # Document 1: textul din "generated text" (emailul de bază)
+                # Document 1: text from "generated text" (base email)
                 if item.get("generated text"):
                     documents.append({
                         "content": item["generated text"][:800],
@@ -149,7 +149,7 @@ class RAGRetriever:
                         }
                     })
 
-                # Document 2–5: fiecare round din multi-rounds fraud
+                # Documents 2–5: each round from multi-rounds fraud
                 for rnd in item.get("multi-rounds fraud", []):
                     text = rnd.get("generated_data", "")
                     if text:
@@ -171,14 +171,14 @@ class RAGRetriever:
 
     def retrieve(self, query: str, k: int = TOP_K_DOCS) -> list[dict]:
         """
-        Returnează cele mai relevante k documente pentru query.
+        Returns the top-k most relevant documents for the query.
 
         Args:
-            query: string de căutare (topic + fraud_stage + locale)
-            k:     numărul de documente returnate
+            query: search string (topic + fraud_stage + locale)
+            k:     number of documents to return
 
         Returns:
-            listă de dict cu 'content' și 'metadata'
+            list of dicts with 'content' and 'metadata'
         """
         if self._index is None:
             return []

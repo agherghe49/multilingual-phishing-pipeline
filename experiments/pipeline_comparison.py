@@ -1,17 +1,17 @@
 """
 experiments/pipeline_comparison.py
 
-Compară calitatea emailurilor phishing la fiecare etapă a pipeline-ului:
+Compares phishing email quality at each pipeline stage:
 
-  Etapa 1 — LLM de bază, fără RAG, fără self-correction
-  Etapa 2 — LLM cu RAG, fără self-correction  (din audit_log: generation_result)
-  Etapa 3 — LLM cu RAG + self-correction       (din audit_log: email_text final)
-  Etapa 4 — GRPO fine-tuned                    (din grpo_eval.json)
+  Stage 1 — Base LLM, no RAG, no self-correction
+  Stage 2 — LLM with RAG, no self-correction  (from audit_log: generation_result)
+  Stage 3 — LLM with RAG + self-correction     (from audit_log: final email_text)
+  Stage 4 — GRPO fine-tuned                    (from grpo_eval.json)
 
-Arată contribuția fiecărei componente la calitatea finală.
-Scorarea se face cu reward heuristic pentru consistență între etape.
+Shows each component's contribution to final quality.
+Scoring uses the heuristic reward for consistency across stages.
 
-Rulare:
+Usage:
     python experiments/pipeline_comparison.py
     python experiments/pipeline_comparison.py --n 100
 """
@@ -52,7 +52,7 @@ def score_email(text: str, locale: str, stage: str) -> dict:
 
 
 def score_batch(emails: list[dict]) -> dict:
-    """Scorează o listă de emailuri și returnează medii."""
+    """Scores a list of emails and returns averages."""
     texts   = [e["text"]   for e in emails]
     locales = [e["locale"] for e in emails]
     stages  = [e["stage"]  for e in emails]
@@ -100,7 +100,7 @@ def generate_no_rag(n: int, seed: int = 42) -> list[dict]:
     locales_cycle = LOCALES * (n // len(LOCALES) + 1)
     random.shuffle(locales_cycle)
 
-    print(f"[pipeline] Etapa 1: generez {n} emailuri fără RAG...")
+    print(f"[pipeline] Stage 1: generating {n} emails without RAG...")
     for i in range(n):
         scenario  = random.choice(scenarios)
         locale    = locales_cycle[i]
@@ -108,7 +108,7 @@ def generate_no_rag(n: int, seed: int = 42) -> list[dict]:
         stage     = _infer_fraud_stage(scenario, round_num)
         topic     = scenario.get("subcategory", "account verification")
 
-        # Prompt fără context_docs
+        # Prompt without context_docs
         pd = build_prompt(round_num=round_num, topic=topic,
                           fraud_stage=stage, context_docs=[], locale=locale)
 
@@ -136,8 +136,8 @@ def generate_no_rag(n: int, seed: int = 42) -> list[dict]:
 
 def load_audit_stages(n: int, seed: int = 42) -> tuple[list[dict], list[dict]]:
     """
-    Etapa 2 = generation_result['email_text'] (cu RAG, fără self-correction)
-    Etapa 3 = email_text final (cu RAG + self-correction)
+    Stage 2 = generation_result['email_text'] (with RAG, no self-correction)
+    Stage 3 = final email_text (with RAG + self-correction)
     """
     random.seed(seed)
     with open(AUDIT_LOG, encoding="utf-8") as f:
@@ -150,12 +150,12 @@ def load_audit_stages(n: int, seed: int = 42) -> tuple[list[dict], list[dict]]:
     for entry in sample:
         locale = entry.get("locale", "en-US")
         stage  = entry.get("fraud_stage", "authority")
-        # Etapa 2: emailul generat înainte de self-correction
+        # Stage 2: email generated before self-correction
         raw = entry.get("generation_result", {})
         raw_text = raw.get("email_text", "") if isinstance(raw, dict) else ""
         if raw_text.strip():
             stage2.append({"text": raw_text, "locale": locale, "stage": stage})
-        # Etapa 3: emailul final după self-correction
+        # Stage 3: final email after self-correction
         final_text = entry.get("email_text", "")
         if final_text.strip():
             stage3.append({"text": final_text, "locale": locale, "stage": stage})
@@ -166,7 +166,7 @@ def load_audit_stages(n: int, seed: int = 42) -> tuple[list[dict], list[dict]]:
 # ── Etapa 4: din grpo_eval.json ───────────────────────────────────────────────
 
 def load_grpo_stage() -> tuple[list[dict], list[dict]]:
-    """Base model și GRPO fine-tuned din grpo_eval.json."""
+    """Base model and GRPO fine-tuned results from grpo_eval.json."""
     with open(GRPO_EVAL, encoding="utf-8") as f:
         data = json.load(f)
 
@@ -191,7 +191,7 @@ def plot_pipeline(results: dict, out_path: Path):
 
     stages  = list(results.keys())
     metrics = ["reward", "quality", "diversity", "format"]
-    labels  = ["Reward total", "Calitate", "Diversitate", "Format"]
+    labels  = ["Total reward", "Quality", "Diversity", "Format"]
     colors  = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
@@ -209,11 +209,11 @@ def plot_pipeline(results: dict, out_path: Path):
                         textcoords="offset points", xytext=(0, 4),
                         ha="center", fontsize=10, fontweight="bold")
 
-    fig.suptitle("Comparație pipeline de generare — calitate per etapă",
+    fig.suptitle("Generation pipeline comparison — quality per stage",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[pipeline] Plot salvat: {out_path}")
+    print(f"[pipeline] Plot saved: {out_path}")
 
 
 def plot_degenerate(results: dict, out_path: Path):
@@ -228,9 +228,9 @@ def plot_degenerate(results: dict, out_path: Path):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     ax1.bar(stages, words, color="#607D8B", alpha=0.85)
-    ax1.set_title("Lungime medie email (cuvinte)", fontsize=12, fontweight="bold")
+    ax1.set_title("Average email length (words)", fontsize=12, fontweight="bold")
     ax1.set_xticklabels(stages, rotation=15, ha="right", fontsize=9)
-    ax1.axhline(80, color="red", linestyle="--", alpha=0.6, label="Prag minim (80)")
+    ax1.axhline(80, color="red", linestyle="--", alpha=0.6, label="Min threshold (80)")
     ax1.legend()
     ax1.grid(axis="y", alpha=0.3)
     for i, v in enumerate(words):
@@ -238,7 +238,7 @@ def plot_degenerate(results: dict, out_path: Path):
                      xytext=(0,4), ha="center", fontsize=10)
 
     ax2.bar(stages, degen, color="#F44336", alpha=0.85)
-    ax2.set_title("Emailuri degenerate % (sub 80 cuvinte)", fontsize=12, fontweight="bold")
+    ax2.set_title("Degenerate emails % (under 80 words)", fontsize=12, fontweight="bold")
     ax2.set_xticklabels(stages, rotation=15, ha="right", fontsize=9)
     ax2.set_ylim(0, max(degen) * 1.3 + 1)
     ax2.grid(axis="y", alpha=0.3)
@@ -246,10 +246,10 @@ def plot_degenerate(results: dict, out_path: Path):
         ax2.annotate(f"{v:.1f}%", (i, v), textcoords="offset points",
                      xytext=(0,4), ha="center", fontsize=10)
 
-    fig.suptitle("Calitatea formatului per etapă pipeline", fontsize=13, fontweight="bold")
+    fig.suptitle("Format quality per pipeline stage", fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"[pipeline] Plot format salvat: {out_path}")
+    print(f"[pipeline] Format plot saved: {out_path}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -257,17 +257,17 @@ def plot_degenerate(results: dict, out_path: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n",    type=int, default=100,
-                        help="Emailuri per etapă (etapa 1 generează, 2-4 din fișiere)")
+                        help="Emails per stage (stage 1 generates, 2-4 from files)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-gen", action="store_true",
-                        help="Sare generarea etapei 1 (folosește cache)")
+                        help="Skip stage 1 generation (use cache)")
     args = parser.parse_args()
 
     cache_path = OUT_DIR / "stage1_no_rag.json"
 
     # ── Etapa 1: No RAG ───────────────────────────────────────────────────
     if args.skip_gen and cache_path.exists():
-        print("[pipeline] Încarc Etapa 1 din cache...")
+        print("[pipeline] Loading Stage 1 from cache...")
         with open(cache_path) as f:
             stage1_emails = json.load(f)
     else:
@@ -276,15 +276,15 @@ def main():
             json.dump(stage1_emails, f, ensure_ascii=False, indent=2)
 
     # ── Etapa 2 & 3: audit_log ────────────────────────────────────────────
-    print(f"[pipeline] Încarc Etapele 2 & 3 din audit_log ({args.n} samples)...")
+    print(f"[pipeline] Loading Stages 2 & 3 from audit_log ({args.n} samples)...")
     stage2_emails, stage3_emails = load_audit_stages(args.n, args.seed)
 
     # ── Etapa 4: GRPO ─────────────────────────────────────────────────────
-    print("[pipeline] Încarc Etapa 4 din grpo_eval.json...")
+    print("[pipeline] Loading Stage 4 from grpo_eval.json...")
     base_emails, grpo_emails = load_grpo_stage()
 
     # ── Scorare ───────────────────────────────────────────────────────────
-    print("\n[pipeline] Scorez toate etapele...")
+    print("\n[pipeline] Scoring all stages...")
     results = {
         "1. No RAG":            score_batch(stage1_emails),
         "2. RAG (no SC)":       score_batch(stage2_emails),
@@ -295,9 +295,9 @@ def main():
 
     # ── Print tabel ───────────────────────────────────────────────────────
     print("\n" + "="*80)
-    print("COMPARAȚIE PIPELINE — calitate per etapă")
+    print("PIPELINE COMPARISON — quality per stage")
     print("="*80)
-    print(f"{'Etapă':<22} {'N':>5} {'Reward':>8} {'Quality':>8} {'Diversity':>10} "
+    print(f"{'Stage':<22} {'N':>5} {'Reward':>8} {'Quality':>8} {'Diversity':>10} "
           f"{'Format':>8} {'Words':>7} {'Degen%':>8}")
     print("-"*80)
     for stage_name, r in results.items():
@@ -315,7 +315,7 @@ def main():
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump({"config": {"n": args.n, "seed": args.seed},
                    "results": results}, f, ensure_ascii=False, indent=2)
-    print(f"[pipeline] Rezultate salvate: {out_json}")
+    print(f"[pipeline] Results saved: {out_json}")
 
 
 if __name__ == "__main__":
